@@ -1,0 +1,18 @@
+# Base Setting - Cấu hình chung của ứng dụng
+app:
+  name: "CCDLaser"
+  version: "1.0.0"
+  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  log_to_file: true
+
+# Đường dẫn
+paths:
+  logs: "logs"
+  images: "assets/test_images"
+  
+# UI Settings
+ui:
+  window_width: 1200
+  window_height: 800
+  theme: "dark"
+

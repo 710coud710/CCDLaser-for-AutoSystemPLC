@@ -1,0 +1,39 @@
+# Camera Configuration
+camera:
+  # Loại camera: "mock" hoặc "mindvision"
+  type: "mock"  # Đổi thành "mindvision" khi có camera thật
+  
+  # IP address của camera (cho GigE camera)
+  ip: "192.168.1.41"
+  
+  # Serial Number (alternative to IP)
+  serial_number: ""
+  
+  # Camera parameters
+  width: 1280
+  height: 1024
+  pixel_format: "Mono8"  # Mono8, RGB8
+  
+  # Exposure settings
+  exposure_auto: false
+  exposure_time: 10000  # microseconds
+  
+  # Gain settings
+  gain_auto: false
+  gain: 0  # dB
+  
+  # Trigger settings
+  trigger_mode: "off"  # "off" for free-run, "on" for software trigger
+  trigger_source: "software"
+  
+  # Frame rate
+  frame_rate: 30  # FPS
+  
+  # Timeout
+  grab_timeout: 1000  # milliseconds
+  
+  # Reconnect settings
+  auto_reconnect: true
+  reconnect_interval: 5000  # milliseconds
+  max_reconnect_attempts: 3
+

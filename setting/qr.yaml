@@ -1,0 +1,25 @@
+# QR Code Configuration
+qr:
+  # QR decoder settings
+  enabled: true
+  
+  # ROI (Region of Interest) for QR detection
+  roi:
+    enabled: false
+    x: 0
+    y: 0
+    width: 1280
+    height: 1024
+  
+  # Decoder parameters
+  decoder:
+    timeout: 1000  # milliseconds
+    min_quality: 50  # 0-100
+    
+  # Validation
+  validation:
+    enabled: true
+    pattern: ""  # Regex pattern for validation
+    min_length: 0
+    max_length: 100
+
