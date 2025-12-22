@@ -1,6 +1,5 @@
+/logs/
+/dist/
+/build/
+/venv/
 __pycache__/
-*.pyc
-dist/
-build/
-logs/
-venv/
