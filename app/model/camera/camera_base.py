@@ -111,8 +111,16 @@ class CameraBase(ABC):
             Dictionary chứa thông tin camera
         """
         return {
+            'type': self.__class__.__name__,
             'camera_id': self.camera_id,
             'is_connected': self._is_connected,
             'is_grabbing': self._is_grabbing
         }
+    
+    def cleanup(self):
+        """Cleanup resources - gọi trước khi thoát app"""
+        if self._is_grabbing:
+            self.stop_grabbing()
+        if self._is_connected:
+            self.disconnect()
 

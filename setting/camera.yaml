@@ -1,13 +1,16 @@
 # Camera Configuration
 camera:
   # Loại camera: "mock" hoặc "mindvision"
-  type: "mock"  # Đổi thành "mindvision" khi có camera thật
+  type: "mock"  # Dùng MindVision camera thật
   
-  # IP address của camera (cho GigE camera)
-  ip: "192.168.1.41"
+  # Camera ID:
+  #   - "cam0", "cam1", "cam2" → chọn camera theo index
+  #   - "auto" → chọn camera đầu tiên
+  #   - "0", "1", "2" → index number
+  #   - serial number → chọn theo SN
+  ip: "cam2"  # ← Chọn camera thứ 2 (index 1)
   
-  # Serial Number (alternative to IP)
-  serial_number: ""
+  # (Không dùng IP nữa, dùng index thay vì)
   
   # Camera parameters
   width: 1280

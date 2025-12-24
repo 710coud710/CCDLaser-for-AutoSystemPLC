@@ -6,8 +6,8 @@ import signal
 from PySide6.QtWidgets import QApplication
 
 # Import services
-from services.LogService import getLogger
-from services.ConfigService import get_config_service
+from services.logService import getLogger
+from services.settingService import get_setting_service
 # Import MVP components
 from app.view import MainView
 from app.presenter import MainPresenter
@@ -24,14 +24,8 @@ def main():
     
     try:
         # 2. Load configuration
-        config_service = get_config_service()
-        if not config_service.load_all_configs():
-            logger.warning("Failed to load some config files, using defaults")
-        else:
-            logger.info("Configuration loaded successfully")
-        
-        # Get all config
-        config = config_service.get_all()
+        config_service = get_setting_service()
+        config = config_service.get_config()
         
         # 3. Create Qt Application
         app = QApplication(sys.argv)

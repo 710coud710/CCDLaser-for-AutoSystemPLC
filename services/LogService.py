@@ -5,7 +5,7 @@ import os
 import logging
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
-from .AppPathService import getAppDirectory
+from .appPathService import getAppDirectory
 import threading
 COLOR = {
     "RESET": "\033[0m",

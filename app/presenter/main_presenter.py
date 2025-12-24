@@ -6,7 +6,7 @@ import logging
 from typing import Optional
 from PySide6.QtCore import QObject, QTimer
 from app.view.view_interface import IView, IPresenter
-from app.model.camera import CameraBase
+from app.model import CameraConnectionService
 from .state_machine import StateMachine, AppState
 
 logger = logging.getLogger(__name__)
@@ -25,8 +25,8 @@ class MainPresenter(QObject):
         self._view = view
         self._config = config
         
-        # Model
-        self._camera_service = CameraBase()
+        # Model - Camera Service
+        self._camera_service = CameraConnectionService()
         
         # State machine
         self._state_machine = StateMachine()
