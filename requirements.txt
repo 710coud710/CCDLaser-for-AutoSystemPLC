@@ -12,8 +12,8 @@ opencv-python>=4.8.0
 PyYAML>=6.0
 
 # Logging (built-in, no need to install)
-# logging
-
+logging>=1.4.4?
+ 
 # Camera SDK
 # MindVision SDK - Cần cài đặt riêng từ nhà sản xuất
 # Tham khảo: http://www.mindvision.com.cn/

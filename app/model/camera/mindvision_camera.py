@@ -20,7 +20,7 @@ class MindVisionCamera(CameraBase):
         try:
             import mvsdk
             self.mvsdk = mvsdk
-            logger.info("✓ MindVision SDK loaded successfully (mvsdk.py)")
+            logger.info(" MindVision SDK loaded successfully (mvsdk.py)")
         except ImportError as e:
             logger.error(f"✗ Cannot import mvsdk: {e}")
             logger.error("Make sure mvsdk.py is in project root")
@@ -385,18 +385,13 @@ class MindVisionCamera(CameraBase):
             raise
     
     def _configure_camera(self):
-        """
-        [4] Configure camera - Cấu hình camera
-        Theo spec: cấu hình ngay sau OpenDevice, chỉ một lần
-        Không cấu hình trong vòng lặp chụp ảnh
-        """
         try:
             # Lấy config từ YAML
             exposure_time = self.config.get('exposure_time', 30000)  # 30ms default
             gain = self.config.get('gain', 0)
             trigger_mode = self.config.get('trigger_mode', 'off')
             
-            # [4.1] Set output format
+            # Set output format
             if self._mono_camera:
                 # Mono camera → output MONO8 (không mở rộng thành RGB)
                 self.mvsdk.CameraSetIspOutFormat(self._handle, self.mvsdk.CAMERA_MEDIA_TYPE_MONO8)
@@ -405,8 +400,6 @@ class MindVisionCamera(CameraBase):
                 # Color camera → output RGB
                 logger.info("  Output format: RGB8")
             
-            # [4.2] Set trigger mode
-            # 0 = continuous (free-run), 1 = software trigger, 2 = hardware trigger
             trig_mode = 0 if trigger_mode.lower() == 'off' else 1
             self.mvsdk.CameraSetTriggerMode(self._handle, trig_mode)
             logger.info(f"  Trigger mode: {'Continuous' if trig_mode == 0 else 'Software trigger'}")

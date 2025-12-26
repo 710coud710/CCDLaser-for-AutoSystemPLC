@@ -1,46 +1,45 @@
+"""
+Camera Connection Service - MindVision Camera Manager
+Quản lý kết nối và điều khiển MindVision camera
+"""
 import logging
 from typing import Optional, Dict, Any
 import numpy as np
 from .camera_base import CameraBase
-from .mock_camera import MockCamera
 from .mindvision_camera import MindVisionCamera
 
 logger = logging.getLogger(__name__)
 
 
-class CameraConnectionService:   
+class CameraConnectionService:
+    """
+    Service quản lý MindVision camera connection
+    - Tạo và quản lý camera instance
+    - Unified interface cho Presenter
+    """
+    
     def __init__(self):
         self._camera: Optional[CameraBase] = None
-        self._camera_type: Optional[str] = None
         logger.info("CameraConnectionService initialized")
     
-    def create_camera(self, camera_type: str, camera_id: str, config: Dict[str, Any]) -> bool:
+    def create_camera(self, camera_id: str, config: Dict[str, Any]) -> bool:
         """
-        Tạo camera instance theo type
+        Tạo MindVision camera instance
         Args:
-            camera_type: "mock", "mindvision"
-            camera_id: IP address hoặc Serial Number
+            camera_id: Camera ID ("cam0", "cam1", "cam2", hoặc SN)
             config: Camera configuration từ YAML
         Returns:
             True nếu tạo thành công
         """
         try:
-            logger.info(f"Creating camera: type={camera_type}, id={camera_id}")
+            logger.info(f"Creating MindVision camera: id={camera_id}")
             
             # Cleanup existing camera nếu có
             if self._camera is not None:
                 self.cleanup()
             
-            # Factory pattern - tạo camera theo type
-            if camera_type.lower() == 'mock':
-                self._camera = MockCamera(camera_id, config)
-            elif camera_type.lower() == 'mindvision':
-                self._camera = MindVisionCamera(camera_id, config)
-            else:
-                logger.error(f"Unknown camera type: {camera_type}")
-                return False
-            
-            self._camera_type = camera_type
+            # Tạo MindVision camera instance
+            self._camera = MindVisionCamera(camera_id, config)
             logger.info(f"Camera instance created: {self._camera.__class__.__name__}")
             return True
             
@@ -199,7 +198,6 @@ class CameraConnectionService:
                 logger.error(f"Error during cleanup: {e}")
             finally:
                 self._camera = None
-                self._camera_type = None
         
         logger.info("Camera cleanup completed")
 

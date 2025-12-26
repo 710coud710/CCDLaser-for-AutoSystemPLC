@@ -106,24 +106,23 @@ class MainPresenter(QObject):
     # ========== Private Methods ==========
     
     def _connect_camera(self):
-        """Kết nối camera"""
+        """Kết nối MindVision camera"""
         try:
             # Transition to CONNECTING
             if not self._state_machine.transition_to(AppState.CONNECTING):
                 return
             
             self._view.update_status("connecting")
-            self._view.show_message("Connecting to camera...", "info")
+            self._view.show_message("Connecting to MindVision camera...", "info")
             
             # Lấy config từ YAML
             camera_config = self._config.get('camera', {})
-            camera_type = camera_config.get('type', 'mock')
-            camera_id = camera_config.get('ip', '192.168.1.41')
+            camera_id = camera_config.get('ip', 'cam2')  # Default: cam2
             
-            logger.info(f"Connecting to {camera_type} camera at {camera_id}")
+            logger.info(f"Connecting to MindVision camera: {camera_id}")
             
             # Tạo camera instance
-            if not self._camera_service.create_camera(camera_type, camera_id, camera_config):
+            if not self._camera_service.create_camera(camera_id, camera_config):
                 raise Exception("Failed to create camera instance")
             
             # Connect

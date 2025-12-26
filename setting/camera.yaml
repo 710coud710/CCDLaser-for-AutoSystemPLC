@@ -1,16 +1,11 @@
-# Camera Configuration
+# Camera Configuration - MindVision Camera
 camera:
-  # Loại camera: "mock" hoặc "mindvision"
-  type: "mock"  # Dùng MindVision camera thật
-  
   # Camera ID:
-  #   - "cam0", "cam1", "cam2" → chọn camera theo index
+  #   - "cam0", "cam1", "cam2" → chọn camera theo index (0, 1, 2)
   #   - "auto" → chọn camera đầu tiên
-  #   - "0", "1", "2" → index number
-  #   - serial number → chọn theo SN
-  ip: "cam2"  # ← Chọn camera thứ 2 (index 1)
-  
-  # (Không dùng IP nữa, dùng index thay vì)
+  #   - "0", "1", "2" → index number trực tiếp
+  #   - "CB12345678" → chọn theo Serial Number
+  ip: "1"  # ← Chọn camera thứ 2 (index 1)
   
   # Camera parameters
   width: 1280
@@ -30,7 +25,7 @@ camera:
   trigger_source: "software"
   
   # Frame rate
-  frame_rate: 30  # FPS
+  frame_rate: 30  # FPS 
   
   # Timeout
   grab_timeout: 1000  # milliseconds
