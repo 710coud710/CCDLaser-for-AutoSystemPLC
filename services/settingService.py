@@ -10,11 +10,11 @@ class SettingService:
     def __init__(self):
         self.app_dir = getAppDirectory()
         self.setting_dir = os.path.join(self.app_dir, "setting")
-        self.config = self.load_all_configs()
+        self.config = self.loadAllSetting()
 
-    def load_all_configs(self) -> dict:
+    def loadAllSetting(self) -> dict:
         """
-        Load tất cả config files và merge lại
+        Load tất cả setting files và merge lại
         - base_setting.yaml
         - camera.yaml
         - qr.yaml (future)
@@ -59,14 +59,14 @@ class SettingService:
         
         return merged_config
 
-    def get_config(self) -> dict:
+    def getSetting(self) -> dict:
         """Get toàn bộ config"""
         return self.config
 
-    def get_config_value(self, key: str, default=None):
+    def getSettingValue(self, key: str, default=None):
         return self.config.get(key, default)
 
 
-def get_setting_service():
+def getSettingService():
     """Factory function để tạo SettingService instance"""
     return SettingService()

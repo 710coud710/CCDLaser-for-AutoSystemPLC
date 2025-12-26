@@ -1,24 +1,11 @@
-"""
-Camera Base - Interface cho tất cả camera
-Theo nguyên tắc: Presenter không biết camera là MindVision hay hãng khác
-"""
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any
 import numpy as np
 
 
 class CameraBase(ABC):
-    """
-    Base class cho tất cả camera
-    Định nghĩa interface chung mà mọi camera phải implement
-    """
     
     def __init__(self, camera_id: str, config: Dict[str, Any]):
-        """
-        Args:
-            camera_id: ID định danh camera (IP, Serial Number, etc.)
-            config: Cấu hình camera từ YAML
-        """
         self.camera_id = camera_id
         self.config = config
         self._is_connected = False
@@ -26,20 +13,10 @@ class CameraBase(ABC):
     
     @abstractmethod
     def connect(self) -> bool:
-        """
-        Kết nối đến camera
-        Returns:
-            True nếu kết nối thành công, False nếu thất bại
-        """
         pass
     
     @abstractmethod
     def disconnect(self) -> bool:
-        """
-        Ngắt kết nối camera
-        Returns:
-            True nếu ngắt kết nối thành công
-        """
         pass
     
     @abstractmethod

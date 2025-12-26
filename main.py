@@ -7,7 +7,7 @@ from PySide6.QtWidgets import QApplication
 
 # Import services
 from services.logService import getLogger
-from services.settingService import get_setting_service
+from services.settingService import getSettingService
 # Import MVP components
 from app.view import MainView
 from app.presenter import MainPresenter
@@ -24,8 +24,8 @@ def main():
     
     try:
         # 2. Load configuration
-        config_service = get_setting_service()
-        config = config_service.get_config()
+        settingService = getSettingService()
+        settings = settingService.getSetting()
         
         # 3. Create Qt Application
         app = QApplication(sys.argv)
@@ -39,7 +39,7 @@ def main():
         view = MainView()
         
         # 5. Create Presenter (MVP pattern)
-        presenter = MainPresenter(view, config)
+        presenter = MainPresenter(view, settings)
         
         # 6. Connect View and Presenter
         view.set_presenter(presenter)

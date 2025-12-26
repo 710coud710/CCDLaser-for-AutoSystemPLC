@@ -20,10 +20,10 @@ class MainPresenter(QObject):
     - Xử lý business logic
     """
     
-    def __init__(self, view: IView, config: dict):
+    def __init__(self, view: IView, settings: dict):
         super().__init__()
         self._view = view
-        self._config = config
+        self._settings = settings
         
         # Model - Camera Service
         self._camera_service = CameraConnectionService()
@@ -116,7 +116,7 @@ class MainPresenter(QObject):
             self._view.show_message("Connecting to MindVision camera...", "info")
             
             # Lấy config từ YAML
-            camera_config = self._config.get('camera', {})
+            camera_config = self._settings.get('camera', {})
             camera_id = camera_config.get('ip', 'cam2')  # Default: cam2
             
             logger.info(f"Connecting to MindVision camera: {camera_id}")
