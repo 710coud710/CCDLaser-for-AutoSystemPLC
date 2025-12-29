@@ -22,7 +22,7 @@ class MindVisionCamera(CameraBase):
             self.mvsdk = mvsdk
             logger.info(" MindVision SDK loaded successfully (mvsdk.py)")
         except ImportError as e:
-            logger.error(f"✗ Cannot import mvsdk: {e}")
+            logger.error(f"Cannot import mvsdk: {e}")
             logger.error("Make sure mvsdk.py is in project root")
             self.mvsdk = None
     
@@ -32,7 +32,7 @@ class MindVisionCamera(CameraBase):
         [1] Load SDK → [2] Enumerate → [3] Init → [4] Config → [5] Ready
         """
         if self.mvsdk is None:
-            logger.error("✗ MindVision SDK not available")
+            logger.error("MindVision SDK not available")
             return False
         
         try:
@@ -43,54 +43,54 @@ class MindVisionCamera(CameraBase):
             logger.info("[2/5] Enumerating devices...")
             device_list = self._enumerate_devices()
             if not device_list:
-                logger.error("✗ No MindVision camera found")
+                logger.error("No MindVision camera found")
                 return False
             
-            logger.info(f"✓ Found {len(device_list)} camera(s)")
+            logger.info(f"Found {len(device_list)} camera(s)")
             
             # [2.1] Select camera - Chọn camera theo camera_id
             logger.info("[2.1] Selecting camera...")
             self._device_info = self._select_camera(device_list)
             if self._device_info is None:
-                logger.error(f"✗ Cannot select camera: {self.camera_id}")
+                logger.error(f"Cannot select camera: {self.camera_id}")
                 return False
             
-            logger.info(f"✓ Selected: {self._device_info.GetFriendlyName()} (SN: {self._device_info.GetSn()})")
+            logger.info(f"Selected: {self._device_info.GetFriendlyName()} (SN: {self._device_info.GetSn()})")
             
             # [3] Init camera - Mở camera (tạo handle)
             logger.info("[3/5] Initializing camera...")
             self._handle = self.mvsdk.CameraInit(self._device_info, -1, -1)
-            logger.info(f"✓ Camera initialized, handle: {self._handle}")
+            logger.info(f"Camera initialized, handle: {self._handle}")
             
             # [3.1] Get capability
             self._cap = self.mvsdk.CameraGetCapability(self._handle)
             
             # Check if mono or color camera
             self._mono_camera = (self._cap.sIspCapacity.bMonoSensor != 0)
-            logger.info(f"✓ Camera type: {'MONO' if self._mono_camera else 'COLOR'}")
+            logger.info(f"Camera type: {'MONO' if self._mono_camera else 'COLOR'}")
             
             # [4] Configure parameters (chỉ 1 lần ngay sau khi mở)
             logger.info("[4/5] Configuring camera parameters...")
             self._configure_camera()
-            logger.info("✓ Camera configured")
+            logger.info("Camera configured")
             
             # [5] Allocate frame buffer
             logger.info("[5/5] Allocating frame buffer...")
             self._allocate_frame_buffer()
-            logger.info("✓ Frame buffer allocated")
+            logger.info("Frame buffer allocated")
             
             self._is_connected = True
             logger.info("=" * 60)
-            logger.info(f"✓✓✓ Camera connected successfully: {self._device_info.GetFriendlyName()}")
+            logger.info(f"✓✓Camera connected successfully: {self._device_info.GetFriendlyName()}")
             logger.info("=" * 60)
             return True
             
         except self.mvsdk.CameraException as e:
-            logger.error(f"✗ MindVision CameraException({e.error_code}): {e.message}")
+            logger.error(f"MindVision CameraException({e.error_code}): {e.message}")
             self._cleanup_on_error()
             return False
         except Exception as e:
-            logger.error(f"✗ Failed to connect camera: {e}", exc_info=True)
+            logger.error(f"Failed to connect camera: {e}", exc_info=True)
             self._cleanup_on_error()
             return False
     
@@ -120,7 +120,7 @@ class MindVisionCamera(CameraBase):
             if self._frame_buffer is not None:
                 try:
                     self.mvsdk.CameraAlignFree(self._frame_buffer)
-                    logger.info("✓ Frame buffer freed")
+                    logger.info("Frame buffer freed")
                 except:
                     pass
                 self._frame_buffer = None
@@ -129,17 +129,17 @@ class MindVisionCamera(CameraBase):
             if self._handle is not None:
                 self.mvsdk.CameraUnInit(self._handle)
                 self._handle = None
-                logger.info("✓ Camera uninitialized")
+                logger.info("Camera uninitialized")
             
             self._is_connected = False
             self._device_info = None
             self._cap = None
             
-            logger.info("✓ Camera disconnected")
+            logger.info("Camera disconnected")
             return True
             
         except Exception as e:
-            logger.error(f"✗ Failed to disconnect camera: {e}", exc_info=True)
+            logger.error(f"Failed to disconnect camera: {e}", exc_info=True)
             return False
     
     def start_grabbing(self) -> bool:
@@ -148,20 +148,20 @@ class MindVisionCamera(CameraBase):
         SDK sẽ tự động lấy ảnh liên tục vào buffer
         """
         if not self._is_connected:
-            logger.error("✗ Cannot start grabbing: not connected")
+            logger.error("Cannot start grabbing: not connected")
             return False
         
         try:
             logger.info("[4] Starting grabbing (CameraPlay)...")
             self.mvsdk.CameraPlay(self._handle)
             self._is_grabbing = True
-            logger.info("✓ Grabbing started - camera is streaming")
+            logger.info("Grabbing started - camera is streaming")
             return True
         except self.mvsdk.CameraException as e:
-            logger.error(f"✗ CameraPlay failed({e.error_code}): {e.message}")
+            logger.error(f"CameraPlay failed({e.error_code}): {e.message}")
             return False
         except Exception as e:
-            logger.error(f"✗ Failed to start grabbing: {e}", exc_info=True)
+            logger.error(f"Failed to start grabbing: {e}", exc_info=True)
             return False
     
     def stop_grabbing(self) -> bool:
@@ -173,18 +173,18 @@ class MindVisionCamera(CameraBase):
             logger.info("Stopping grabbing (CameraPause)...")
             self.mvsdk.CameraPause(self._handle)
             self._is_grabbing = False
-            logger.info("✓ Grabbing stopped")
+            logger.info("Grabbing stopped")
             return True
         except self.mvsdk.CameraException as e:
-            logger.error(f"✗ CameraPause failed({e.error_code}): {e.message}")
+            logger.error(f"CameraPause failed({e.error_code}): {e.message}")
             return False
         except Exception as e:
-            logger.error(f"✗ Failed to stop grabbing: {e}", exc_info=True)
+            logger.error(f"Failed to stop grabbing: {e}", exc_info=True)
             return False
     
     def capture_frame(self, timeout_ms: int = 1000) -> Optional[np.ndarray]:
         if not self._is_connected or not self._is_grabbing:
-            logger.error("✗ Cannot capture: camera not ready (connected={}, grabbing={})".format(
+            logger.error("Cannot capture: camera not ready (connected={}, grabbing={})".format(
                 self._is_connected, self._is_grabbing))
             return None
         
@@ -213,7 +213,7 @@ class MindVisionCamera(CameraBase):
             # ⚠️ IMPORTANT: Copy data trước khi release buffer
             # Nếu không copy, data sẽ corrupt khi buffer bị ghi đè
             image = image.copy()
-            
+                                                                                                                                                                                                                
             return image
             
         except self.mvsdk.CameraException as e:
@@ -221,10 +221,10 @@ class MindVisionCamera(CameraBase):
                 # Timeout không phải lỗi nghiêm trọng, chỉ warning
                 logger.warning(f"Frame timeout ({timeout_ms}ms)")
             else:
-                logger.error(f"✗ CameraGetImageBuffer failed({e.error_code}): {e.message}")
+                logger.error(f"CameraGetImageBuffer failed({e.error_code}): {e.message}")
             return None
         except Exception as e:
-            logger.error(f"✗ Failed to capture frame: {e}", exc_info=True)
+            logger.error(f"Failed to capture frame: {e}", exc_info=True)
             return None
             
         finally:
@@ -234,7 +234,7 @@ class MindVisionCamera(CameraBase):
                 try:
                     self.mvsdk.CameraReleaseImageBuffer(self._handle, pRawData)
                 except Exception as e:
-                    logger.error(f"✗ Failed to release buffer: {e}")
+                    logger.error(f"Failed to release buffer: {e}")
     
     def set_parameter(self, param_name: str, value: Any) -> bool:
         """Set camera parameter (dùng trong runtime nếu cần)"""
@@ -250,11 +250,11 @@ class MindVisionCamera(CameraBase):
                 logger.warning(f"Unknown parameter: {param_name}")
                 return False
             
-            logger.info(f"✓ Set {param_name} = {value}")
+            logger.info(f"Set {param_name} = {value}")
             return True
             
         except self.mvsdk.CameraException as e:
-            logger.error(f"✗ Set {param_name} failed({e.error_code}): {e.message}")
+            logger.error(f"Set {param_name} failed({e.error_code}): {e.message}")
             return False
     
     def get_parameter(self, param_name: str) -> Optional[Any]:
@@ -270,7 +270,7 @@ class MindVisionCamera(CameraBase):
             else:
                 return None
         except Exception as e:
-            logger.error(f"✗ Get {param_name} failed: {e}")
+            logger.error(f"Get {param_name} failed: {e}")
             return None
     
     def _enumerate_devices(self) -> List:
@@ -290,10 +290,10 @@ class MindVisionCamera(CameraBase):
             return device_list
             
         except self.mvsdk.CameraException as e:
-            logger.error(f"✗ CameraEnumerateDevice failed({e.error_code}): {e.message}")
+            logger.error(f"CameraEnumerateDevice failed({e.error_code}): {e.message}")
             return []
         except Exception as e:
-            logger.error(f"✗ Failed to enumerate devices: {e}", exc_info=True)
+            logger.error(f"Failed to enumerate devices: {e}", exc_info=True)
             return []
     
     def _select_camera(self, device_list: List):
@@ -340,25 +340,25 @@ class MindVisionCamera(CameraBase):
                 logger.info(f"SN mode: searching for camera with SN: {self.camera_id}")
                 for dev in device_list:
                     if dev.GetSn() == self.camera_id:
-                        logger.info(f"✓ Found camera by SN: {dev.GetFriendlyName()}")
+                        logger.info(f"Found camera by SN: {dev.GetFriendlyName()}")
                         return dev
-                logger.error(f"✗ Camera with SN '{self.camera_id}' not found")
+                logger.error(f"Camera with SN '{self.camera_id}' not found")
                 return None
             
             # Check index validity
             if camera_index is not None:
                 if 0 <= camera_index < nDev:
                     selected = device_list[camera_index]
-                    logger.info(f"✓ Selected camera [{camera_index}]: {selected.GetFriendlyName()}")
+                    logger.info(f"Selected camera [{camera_index}]: {selected.GetFriendlyName()}")
                     return selected
                 else:
-                    logger.error(f"✗ Camera index {camera_index} out of range (available: 0-{nDev-1})")
+                    logger.error(f"Camera index {camera_index} out of range (available: 0-{nDev-1})")
                     return None
             
             return None
             
         except Exception as e:
-            logger.error(f"✗ Error selecting camera: {e}", exc_info=True)
+            logger.error(f"Error selecting camera: {e}", exc_info=True)
             return None
     
     def _allocate_frame_buffer(self):
@@ -381,7 +381,7 @@ class MindVisionCamera(CameraBase):
             logger.info(f"Buffer allocated: {width_max}x{height_max}x{bytes_per_pixel} = {buffer_size} bytes")
             
         except Exception as e:
-            logger.error(f"✗ Failed to allocate frame buffer: {e}")
+            logger.error(f"Failed to allocate frame buffer: {e}")
             raise
     
     def _configure_camera(self):
@@ -390,15 +390,31 @@ class MindVisionCamera(CameraBase):
             exposure_time = self.config.get('exposure_time', 30000)  # 30ms default
             gain = self.config.get('gain', 0)
             trigger_mode = self.config.get('trigger_mode', 'off')
+            pixel_format = self.config.get('pixel_format', 'auto').lower()  # auto, mono8, rgb8
             
-            # Set output format
-            if self._mono_camera:
-                # Mono camera → output MONO8 (không mở rộng thành RGB)
+            # Set output format based on pixel_format config
+            if pixel_format == 'mono8':
+                # Force MONO8 output
                 self.mvsdk.CameraSetIspOutFormat(self._handle, self.mvsdk.CAMERA_MEDIA_TYPE_MONO8)
-                logger.info("  Output format: MONO8")
+                self._mono_camera = True  # Override detection
+                logger.info("  Output format: MONO8 (forced by config)")
+            elif pixel_format == 'rgb8':
+                # Force RGB8 output
+                if self._mono_camera:
+                    # Convert mono to RGB
+                    logger.info("  Output format: RGB8 (mono sensor expanded to RGB)")
+                else:
+                    logger.info("  Output format: RGB8")
+                self._mono_camera = False  # Override detection
             else:
-                # Color camera → output RGB
-                logger.info("  Output format: RGB8")
+                # Auto mode - use sensor type
+                if self._mono_camera:
+                    # Mono camera → output MONO8 (không mở rộng thành RGB)
+                    self.mvsdk.CameraSetIspOutFormat(self._handle, self.mvsdk.CAMERA_MEDIA_TYPE_MONO8)
+                    logger.info("  Output format: MONO8 (auto)")
+                else:
+                    # Color camera → output RGB
+                    logger.info("  Output format: RGB8 (auto)")
             
             trig_mode = 0 if trigger_mode.lower() == 'off' else 1
             self.mvsdk.CameraSetTriggerMode(self._handle, trig_mode)
@@ -417,13 +433,13 @@ class MindVisionCamera(CameraBase):
                 except:
                     pass
             
-            logger.info("✓ Camera parameters configured")
+            logger.info("Camera parameters configured")
             
         except self.mvsdk.CameraException as e:
-            logger.error(f"✗ Config failed({e.error_code}): {e.message}")
+            logger.error(f"Config failed({e.error_code}): {e.message}")
             raise
         except Exception as e:
-            logger.error(f"✗ Error configuring camera: {e}", exc_info=True)
+            logger.error(f"Error configuring camera: {e}", exc_info=True)
             raise
     
     def get_info(self) -> Dict[str, Any]:

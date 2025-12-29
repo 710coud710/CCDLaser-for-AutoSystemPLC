@@ -100,4 +100,9 @@ class IPresenter(ABC):
     def on_view_closing(self):
         """View sắp đóng"""
         pass
+    
+    @abstractmethod
+    def on_gain_changed(self, gain_value: int):
+        """User thay đổi gain slider"""
+        pass
 

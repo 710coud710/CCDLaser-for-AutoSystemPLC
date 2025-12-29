@@ -7,7 +7,8 @@ from typing import Optional
 import numpy as np
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QGroupBox, QMessageBox, QStatusBar
+    QPushButton, QLabel, QGroupBox, QMessageBox, QStatusBar,
+    QSlider, QSpinBox
 )
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QImage, QPixmap
@@ -156,6 +157,39 @@ class MainView(QMainWindow):
         info_group.setLayout(info_layout)
         layout.addWidget(info_group)
         
+        # Camera parameters
+        params_group = QGroupBox("Camera Parameters")
+        params_layout = QVBoxLayout()
+        
+        # Gain control
+        gain_label = QLabel("Gain:")
+        params_layout.addWidget(gain_label)
+        
+        gain_control_layout = QHBoxLayout()
+        
+        # Gain slider (0-100)
+        self.gain_slider = QSlider(Qt.Horizontal)
+        self.gain_slider.setMinimum(0)
+        self.gain_slider.setMaximum(100)
+        self.gain_slider.setValue(0)
+        self.gain_slider.setEnabled(False)
+        self.gain_slider.valueChanged.connect(self._on_gain_slider_changed)
+        gain_control_layout.addWidget(self.gain_slider)
+        
+        # Gain spinbox
+        self.gain_spinbox = QSpinBox()
+        self.gain_spinbox.setMinimum(0)
+        self.gain_spinbox.setMaximum(100)
+        self.gain_spinbox.setValue(0)
+        self.gain_spinbox.setEnabled(False)
+        self.gain_spinbox.valueChanged.connect(self._on_gain_spinbox_changed)
+        gain_control_layout.addWidget(self.gain_spinbox)
+        
+        params_layout.addLayout(gain_control_layout)
+        
+        params_group.setLayout(params_layout)
+        layout.addWidget(params_group)
+        
         # Spacer
         layout.addStretch()
         
@@ -189,6 +223,8 @@ class MainView(QMainWindow):
             self.btn_start_stream.setEnabled(True)
             self.btn_stop_stream.setEnabled(False)
             self.btn_capture.setEnabled(False)
+            self.gain_slider.setEnabled(True)
+            self.gain_spinbox.setEnabled(True)
             
         elif status == "disconnected" or status == "idle":
             self.btn_connect.setEnabled(True)
@@ -196,12 +232,16 @@ class MainView(QMainWindow):
             self.btn_start_stream.setEnabled(False)
             self.btn_stop_stream.setEnabled(False)
             self.btn_capture.setEnabled(False)
+            self.gain_slider.setEnabled(False)
+            self.gain_spinbox.setEnabled(False)
             self.image_label.setText("No Camera Connected")
             
         elif status == "capturing":
             self.btn_start_stream.setEnabled(False)
             self.btn_stop_stream.setEnabled(True)
             self.btn_capture.setEnabled(True)
+            self.gain_slider.setEnabled(True)
+            self.gain_spinbox.setEnabled(True)
     
     def display_image(self, image: np.ndarray):
         """Hiển thị ảnh"""
@@ -288,6 +328,37 @@ class MainView(QMainWindow):
         """Handle capture button"""
         if self._presenter:
             self._presenter.on_capture_clicked()
+    
+    def _on_gain_slider_changed(self, value: int):
+        """Handle gain slider change"""
+        # Update spinbox without triggering its signal
+        self.gain_spinbox.blockSignals(True)
+        self.gain_spinbox.setValue(value)
+        self.gain_spinbox.blockSignals(False)
+        
+        # Notify presenter
+        if self._presenter:
+            self._presenter.on_gain_changed(value)
+    
+    def _on_gain_spinbox_changed(self, value: int):
+        """Handle gain spinbox change"""
+        # Update slider without triggering its signal
+        self.gain_slider.blockSignals(True)
+        self.gain_slider.setValue(value)
+        self.gain_slider.blockSignals(False)
+        
+        # Notify presenter
+        if self._presenter:
+            self._presenter.on_gain_changed(value)
+    
+    def set_gain_value(self, value: int):
+        """Set gain value from presenter"""
+        self.gain_slider.blockSignals(True)
+        self.gain_spinbox.blockSignals(True)
+        self.gain_slider.setValue(value)
+        self.gain_spinbox.setValue(value)
+        self.gain_slider.blockSignals(False)
+        self.gain_spinbox.blockSignals(False)
     
     def showEvent(self, event):
         """Window shown"""

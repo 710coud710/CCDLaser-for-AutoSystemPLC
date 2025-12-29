@@ -17,7 +17,6 @@ camera:
   exposure_time: 10000  # microseconds
   
   # Gain settings
-  gain_auto: false
   gain: 0  # dB
   
   # Trigger settings

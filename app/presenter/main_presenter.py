@@ -103,6 +103,22 @@ class MainPresenter(QObject):
         logger.info("Capture button clicked")
         self._capture_single_frame()
     
+    def on_gain_changed(self, gain_value: int):
+        """User thay đổi gain slider"""
+        logger.info(f"Gain changed to: {gain_value}")
+        
+        # Chỉ set gain khi camera đã connected
+        if not self._state_machine.is_connected():
+            logger.warning("Cannot set gain: camera not connected")
+            return
+        
+        # Set gain parameter
+        if self._camera_service.set_parameter('Gain', gain_value):
+            logger.info(f"Gain set to {gain_value}")
+        else:
+            logger.error(f"Failed to set gain to {gain_value}")
+            self._view.show_message(f"Failed to set gain", "warning")
+    
     # ========== Private Methods ==========
     
     def _connect_camera(self):
@@ -135,6 +151,11 @@ class MainPresenter(QObject):
             # Update view
             camera_info = self._camera_service.get_camera_info()
             self._view.update_camera_info(camera_info)
+            
+            # Set initial gain value from config
+            initial_gain = camera_config.get('gain', 0)
+            self._view.set_gain_value(initial_gain)
+            
             self._view.show_message("Camera connected successfully", "success")
             
         except Exception as e:
