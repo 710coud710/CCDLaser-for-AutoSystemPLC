@@ -1,1 +1,94 @@
+# QR Code Detection Configuration
 
+qr:
+  # Enable/Disable QR detection
+  enabled: true
+  
+  # ROI (Region of Interest) settings
+  # Multiple ROI regions can be defined for different QR codes
+  roi_regions:
+    - name: "QR1"
+      enabled: true
+      # ROI coordinates (x, y, width, height) in pixels
+      # Or use percentage (0.0 - 1.0) if use_percentage is true
+      x: 100
+      y: 100
+      width: 300
+      height: 300
+      use_percentage: false  # If true, x,y,w,h are percentages of image size
+      
+    - name: "QR2"
+      enabled: false
+      x: 0.5  # Center of image
+      y: 0.2
+      width: 0.3  # 30% of image width
+      height: 0.3
+      use_percentage: true
+  
+  # Detection settings
+  detection:
+    # Number of processing attempts per frame
+    max_attempts: 3
+    
+    # Preprocessing options for each attempt
+    preprocessing:
+      - method: "none"  # No preprocessing
+        
+      - method: "adaptive_threshold"  # Adaptive thresholding
+        block_size: 11
+        c: 2
+        
+      - method: "histogram_equalization"  # Histogram equalization
+      
+      - method: "sharpen"  # Sharpen image
+        kernel_size: 3
+        
+      - method: "denoise"  # Denoise
+        h: 10
+  
+  # Validation settings
+  validation:
+    # Minimum QR code data length
+    min_length: 1
+    
+    # Maximum QR code data length (0 = no limit)
+    max_length: 0
+    
+    # Regex pattern for validation (empty = no validation)
+    pattern: ""
+    
+    # Required prefix (empty = no requirement)
+    required_prefix: ""
+    
+    # Required suffix (empty = no requirement)
+    required_suffix: ""
+  
+  # Visualization settings
+  visualization:
+    # Draw ROI rectangles on image
+    draw_roi: true
+    roi_color: [0, 255, 0]  # Green (BGR)
+    roi_thickness: 2
+    
+    # Draw detected QR codes
+    draw_qr: true
+    qr_color: [255, 0, 0]  # Blue (BGR)
+    qr_thickness: 2
+    
+    # Draw QR data text
+    draw_text: true
+    text_color: [0, 255, 255]  # Yellow (BGR)
+    text_size: 0.6
+    text_thickness: 2
+  
+  # Logging
+  logging:
+    # Log detection results
+    log_results: true
+    
+    # Log failed attempts
+    log_failures: false
+    
+    # Save images with detection results
+    save_debug_images: false
+    debug_image_path: "logs/qr_debug"

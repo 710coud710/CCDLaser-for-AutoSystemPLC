@@ -8,11 +8,15 @@ PySide6>=6.5.0
 numpy>=1.24.0
 opencv-python>=4.8.0
 
+# QR Code Detection
+pyzbar>=0.1.9
+Pillow>=10.0.0
+
 # Configuration
 PyYAML>=6.0
 
-# Logging (built-in, no need to install)
-logging>=1.4.4?
+# Logging
+logging>=1.4.4
  
 # Camera SDK
 # MindVision SDK - Cần cài đặt riêng từ nhà sản xuất

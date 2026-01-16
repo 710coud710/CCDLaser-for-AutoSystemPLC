@@ -1,6 +1,3 @@
-"""
-Main Entry Point - Khởi tạo ứng dụng CCDLaser
-"""
 import sys
 import signal
 from PySide6.QtWidgets import QApplication
@@ -18,10 +15,7 @@ def main():
     
     # 1. Setup logging
     logger = getLogger()
-    logger.info("=" * 80)
     logger.info("CCDLaser - Camera Control System Started")
-    logger.info("=" * 80)
-    
     try:
         # 2. Load configuration
         settingService = getSettingService()
@@ -46,9 +40,8 @@ def main():
         
         # 7. Show window
         view.show()
-        
-        logger.info("Application UI initialized")
-        
+        logger.info("Application already")
+
         # 8. Run event loop
         exit_code = app.exec()
         

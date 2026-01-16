@@ -3,10 +3,15 @@ Main Presenter - Điều phối giữa View và Model
 Theo MVP: Presenter chứa logic, không biết chi tiết UI
 """
 import logging
-from typing import Optional
+from typing import Optional, Dict, Any
+import numpy as np
 from PySide6.QtCore import QObject, QTimer
 from app.view.view_interface import IView, IPresenter
 from app.model import CameraConnectionService
+from app.model.qr import QRDetectionService, QRDetectionResult
+from app.model.recipe import RecipeService, Recipe, TemplateRegion, QRROIRegion, Tolerance
+from app.model.template import TemplateMatchingService, MatchResult
+from app.model.template_data import TemplateService, Template, CropRegion
 from .state_machine import StateMachine, AppState
 
 logger = logging.getLogger(__name__)
@@ -28,6 +33,39 @@ class MainPresenter(QObject):
         # Model - Camera Service
         self._camera_service = CameraConnectionService()
         
+        # QR Detection Service (deprecated, using template service now)
+        qr_config = settings.get('qr', {})
+        self._qr_service = QRDetectionService(qr_config) if qr_config else None
+        self._qr_enabled = False
+        
+        # Barcode detection enabled flag
+        self._barcode_enabled = True  # Default enabled
+        
+        # Recipe Service
+        self._recipe_service = RecipeService()
+        
+        # Template Matching Service
+        self._template_matching_service = TemplateMatchingService()
+        
+        # Template Service (NEW - Simple template system)
+        self._template_service = TemplateService()
+        
+        # Camera Settings Service
+        from services.cameraSettingsService import CameraSettingsService
+        self._camera_settings_service = CameraSettingsService()
+        
+        # Template mode state (for editing templates)
+        self._template_master_image = None
+        self._template_crop_regions = []  # Crop regions (có thể có scan_barcode)
+        self._template_test_image = None
+        
+        # Running mode state
+        self._last_match_result = None
+        
+        # Test image for running mode (without camera)
+        self._test_image = None
+        self._test_image_path = None
+        
         # State machine
         self._state_machine = StateMachine()
         self._state_machine.set_state_change_callback(self._on_state_changed)
@@ -46,6 +84,16 @@ class MainPresenter(QObject):
         logger.info("View ready")
         self._view.update_status("idle")
         self._view.show_message("Application ready", "info")
+        
+        # Load template list
+        templates = self._template_service.list_templates()
+        self._view.update_template_list(templates)
+        logger.info(f"Loaded {len(templates)} template(s)")
+        
+        # Load camera settings if available
+        settings = self._camera_settings_service.load_settings()
+        if settings:
+            logger.info("Loaded saved camera settings")
     
     def on_view_closing(self):
         """View sắp đóng - cleanup"""
@@ -119,6 +167,288 @@ class MainPresenter(QObject):
             logger.error(f"Failed to set gain to {gain_value}")
             self._view.show_message(f"Failed to set gain", "warning")
     
+    def on_qr_enabled_changed(self, enabled: bool):
+        """User thay đổi QR detection enable/disable"""
+        logger.info(f"QR detection {'enabled' if enabled else 'disabled'}")
+        self._qr_enabled = enabled
+        
+        if self._qr_service is None:
+            logger.warning("QR service not available")
+            self._view.show_message("QR service not configured", "warning")
+            return
+    
+    # ========== Running Mode Handlers ==========
+    
+    def on_load_template_clicked(self, template_name: str):
+        """User click Load Template (Running Mode)"""
+        logger.info(f"Load template clicked (Running Mode): {template_name}")
+        
+        template = self._template_service.load_template(template_name)
+        if template:
+            self._template_service.set_current_template(template)
+            
+            info = f"Template: {template.name}\n"
+            info += f"{template.description}\n"
+            info += f"Crop regions: {len(template.crop_regions)}\n"
+            # Count barcode regions (crop regions with scan_barcode=True)
+            barcode_count = sum(1 for r in template.crop_regions if r.scan_barcode)
+            info += f"Barcode regions: {barcode_count}\n"
+            info += f"Image size: {template.master_image_width}x{template.master_image_height}"
+            
+            self._view.update_current_template_info(info)
+            self._view.show_message(f"Template '{template_name}' loaded", "success")
+        else:
+            self._view.show_message(f"Failed to load template '{template_name}'", "error")
+    
+    def on_refresh_templates_clicked(self):
+        """User click Refresh Templates (Running Mode)"""
+        logger.info("Refresh templates clicked (Running Mode)")
+        templates = self._template_service.list_templates()
+        self._view.update_template_list(templates)
+        self._view.show_message(f"Found {len(templates)} template(s)", "info")
+    
+    def on_test_image_loaded(self, image: np.ndarray, file_path: str):
+        """User loaded a test image for QR detection (Running Mode)"""
+        logger.info(f"Test image loaded from file: {file_path}")
+        
+        # Save test image
+        self._test_image = image.copy()
+        self._test_image_path = file_path
+        
+        self._view.show_message(f"Test image loaded successfully", "info")
+        logger.info("Test image ready for processing")
+    
+    def on_process_test_image_clicked(self):
+        """User click Process Test Image - run barcode detection with template"""
+        logger.info("Process test image clicked")
+        
+        # Validate
+        if self._test_image is None:
+            self._view.show_message("Please load a test image first", "warning")
+            return
+        
+        current_template = self._template_service.get_current_template()
+        if current_template is None:
+            self._view.show_message("Please load a template first", "warning")
+            return
+        
+        # Process image with template
+        try:
+            display_frame = self._test_image.copy()
+            
+            # Draw template regions on image
+            show_regions = self._view.get_show_regions_enabled()
+            
+            if show_regions:
+                display_frame = self._template_service.draw_template_regions(
+                    display_frame, current_template, 
+                    draw_regions=show_regions
+                )
+            
+            # Process with template: crop regions + scan barcodes
+            results = self._template_service.process_image_with_template(
+                self._test_image, current_template
+            )
+            
+            if results['success']:
+                # Display cropped images and barcode results
+                barcode_results = results.get('barcodes', {})
+                
+                # Update barcode results display
+                self._view.update_barcode_results(barcode_results)
+                
+                # Log results
+                log_text = ""
+                for region_name, barcode_list in barcode_results.items():
+                    if barcode_list:
+                        for barcode_data in barcode_list:
+                            log_text += f"[OK] {region_name}: {barcode_data}\n"
+                    else:
+                        log_text += f"[NG] {region_name}: No barcode found\n"
+                
+                if log_text:
+                    logger.info(f"Barcode detection results:\n{log_text}")
+                
+                # Display processed image
+                self._view.display_image(display_frame)
+                self._view.show_message("Image processed successfully", "success")
+            else:
+                error_msg = results.get('error', 'Unknown error')
+                self._view.show_message(f"Processing failed: {error_msg}", "error")
+                logger.error(f"Template processing failed: {error_msg}")
+            
+        except Exception as e:
+            logger.error(f"Failed to process test image: {e}", exc_info=True)
+            self._view.show_message(f"Error: {str(e)}", "error")
+    
+    # ========== Template Mode Handlers ==========
+    
+    def on_template_image_loaded(self, image: np.ndarray, file_path: str):
+        """User loaded an image for template creation"""
+        logger.info(f"Template image loaded from file: {file_path}")
+        
+        # Save as master image for template mode
+        self._template_master_image = image.copy()
+        
+        # Clear previous regions
+        self._template_crop_regions = []
+        
+        self._view.show_message(f"Template image loaded successfully", "info")
+        logger.info("Template master image set")
+    
+    def on_template_crop_region_added(self, name: str, x: int, y: int, width: int, height: int, scan_barcode: bool = True):
+        """User added a crop region (có thể có scan barcode)"""
+        logger.info(f"Region added: {name} ({x}, {y}, {width}x{height}), scan_barcode={scan_barcode}")
+        
+        if self._template_master_image is None:
+            self._view.show_message("Please load a master image first", "warning")
+            return
+        
+        # Create crop region với scan_barcode option
+        crop_region = CropRegion(name=name, x=x, y=y, width=width, height=height, scan_barcode=scan_barcode)
+        self._template_crop_regions.append(crop_region)
+        
+        # Update view
+        self._update_template_regions_display()
+        logger.info(f"Regions total: {len(self._template_crop_regions)}")
+    
+    def _update_template_regions_display(self):
+        """Update template regions list display"""
+        text = ""
+        
+        if self._template_crop_regions:
+            text += "=== Regions ===\n"
+            for i, region in enumerate(self._template_crop_regions):
+                scan_text = "Crop+Barcode" if region.scan_barcode else "Crop only"
+                text += f"{i+1}. {region.name}: ({region.x}, {region.y}, {region.width}x{region.height}) [{scan_text}]\n"
+        
+        if not text:
+            text = "No regions defined"
+        
+        self._view.update_template_regions_list(text.strip())
+    
+    def on_save_template_clicked(self, template_name: str, template_desc: str):
+        """User click Save Template"""
+        logger.info(f"Save template clicked: {template_name}")
+        
+        # Validate
+        if self._template_master_image is None:
+            self._view.show_message("Please load a master image first", "warning")
+            return
+        
+        if not self._template_crop_regions:
+            self._view.show_message("Please add at least one crop region", "warning")
+            return
+        
+        # Create template
+        h, w = self._template_master_image.shape[:2]
+        template = Template(
+            name=template_name,
+            description=template_desc,
+            crop_regions=self._template_crop_regions.copy(),
+            master_image_width=w,
+            master_image_height=h
+        )
+        
+        # Save template
+        if self._template_service.save_template(template):
+            self._view.show_message(f"Template '{template_name}' saved successfully", "success")
+            
+            # Clear state
+            self._template_master_image = None
+            self._template_crop_regions = []
+            self._view.update_template_regions_list("No regions defined")
+            
+            # Refresh template list
+            templates = self._template_service.list_templates()
+            self._view.update_template_list(templates)
+            logger.info(f"Template list refreshed, total: {len(templates)}")
+        else:
+            self._view.show_message("Failed to save template", "error")
+    
+    
+    def on_template_test_image_loaded(self, image: np.ndarray, file_path: str):
+        """User loaded a test image for template processing"""
+        logger.info(f"Template test image loaded from file: {file_path}")
+        
+        # Save test image
+        self._template_test_image = image.copy()
+        
+        self._view.show_message(f"Test image loaded successfully", "info")
+        logger.info("Template test image ready for processing")
+    
+    def on_process_template_clicked(self):
+        """User click Process Template - crop regions + scan barcodes"""
+        logger.info("Process template clicked")
+        
+        # Validate
+        if self._template_test_image is None:
+            self._view.show_message("Please load a test image first", "warning")
+            return
+        
+        current_template = self._template_service.get_current_template()
+        if current_template is None:
+            self._view.show_message("Please load a template first", "warning")
+            return
+        
+        # Process image
+        try:
+            display_frame = self._template_test_image.copy()
+            
+            # Draw template regions on image
+            show_regions = self._view.get_show_regions_enabled()
+            
+            if show_regions:
+                display_frame = self._template_service.draw_template_regions(
+                    display_frame, current_template, 
+                    draw_regions=show_regions
+                )
+            
+            # Process with template
+            results = self._template_service.process_image_with_template(
+                self._template_test_image, current_template
+            )
+            
+            if results['success']:
+                # Format results text
+                results_text = ""
+                
+                # Cropped images
+                cropped_images = results.get('cropped_images', {})
+                if cropped_images:
+                    results_text += "=== Cropped Images ===\n"
+                    for name, img in cropped_images.items():
+                        h, w = img.shape[:2]
+                        results_text += f"✓ {name}: {w}x{h}\n"
+                
+                # Barcodes
+                barcodes = results.get('barcodes', {})
+                if barcodes:
+                    results_text += "\n=== Barcodes ===\n"
+                    for region_name, barcode_list in barcodes.items():
+                        if barcode_list:
+                            for barcode_data in barcode_list:
+                                results_text += f"✓ {region_name}: {barcode_data}\n"
+                        else:
+                            results_text += f"✗ {region_name}: No barcode detected\n"
+                
+                if not results_text:
+                    results_text = "No results"
+                
+                self._view.update_template_results(results_text.strip())
+                self._view.show_message("Template processing completed", "success")
+            else:
+                error_msg = results.get('error', 'Unknown error')
+                self._view.update_template_results(f"Error: {error_msg}")
+                self._view.show_message(f"Processing failed: {error_msg}", "error")
+            
+            # Display result image
+            self._view.display_image(display_frame)
+            
+        except Exception as e:
+            logger.error(f"Error processing template: {e}", exc_info=True)
+            self._view.show_message(f"Error processing template: {e}", "error")
+    
     # ========== Private Methods ==========
     
     def _connect_camera(self):
@@ -152,9 +482,24 @@ class MainPresenter(QObject):
             camera_info = self._camera_service.get_camera_info()
             self._view.update_camera_info(camera_info)
             
-            # Set initial gain value from config
-            initial_gain = camera_config.get('gain', 0)
-            self._view.set_gain_value(initial_gain)
+            # Load saved camera settings and apply
+            saved_settings = self._camera_settings_service.load_settings()
+            if saved_settings:
+                logger.info("Applying saved camera settings...")
+                # Update UI controls
+                self._view.update_camera_settings_controls(saved_settings)
+                # Apply to camera
+                if 'exposure_time' in saved_settings:
+                    self._camera_service.set_parameter('ExposureTime', saved_settings['exposure_time'])
+                if 'gain' in saved_settings:
+                    self._camera_service.set_parameter('Gain', saved_settings['gain'])
+                if 'brightness' in saved_settings:
+                    self._camera_service.set_parameter('Gamma', saved_settings['brightness'])
+                if 'contrast' in saved_settings:
+                    self._camera_service.set_parameter('Contrast', saved_settings['contrast'])
+                if 'saturation' in saved_settings:
+                    self._camera_service.set_parameter('Saturation', saved_settings['saturation'])
+                logger.info("Saved camera settings applied")
             
             self._view.show_message("Camera connected successfully", "success")
             
@@ -232,13 +577,49 @@ class MainPresenter(QObject):
             frame = self._camera_service.get_frame(timeout_ms=100)
             
             if frame is not None:
+                display_frame = frame.copy()
+                
+                # Process based on mode - use template for barcode detection
+                current_template = self._template_service.get_current_template()
+                
+                # Running mode with template loaded - process with template (same as template mode)
+                if self._barcode_enabled and current_template is not None:
+                    # Process image with template (crop regions + scan barcodes)
+                    # Dùng chung đường dẫn với template mode
+                    results = self._template_service.process_image_with_template(
+                        frame, current_template
+                    )
+                    
+                    if results['success']:
+                        # Draw template regions if enabled
+                        if self._view.get_show_regions_enabled():
+                            display_frame = self._template_service.draw_template_regions(
+                                display_frame, current_template, 
+                                draw_regions=True
+                            )
+                        
+                        # Get barcode results
+                        barcode_results = results.get('barcodes', {})
+                        
+                        # Update barcode results display
+                        self._view.update_barcode_results(barcode_results)
+                        
+                        # Log results (chỉ log khi có barcode mới để tránh spam)
+                        for region_name, barcode_list in barcode_results.items():
+                            if barcode_list:
+                                for barcode_data in barcode_list:
+                                    logger.debug(f"DataMatrix found in '{region_name}': {barcode_data}")
+                    else:
+                        error_msg = results.get('error', 'Unknown error')
+                        logger.warning(f"Template processing failed in streaming: {error_msg}")
+                
                 # Display frame
-                self._view.display_image(frame)
+                self._view.display_image(display_frame)
             else:
                 logger.warning("Failed to get frame")
                 
         except Exception as e:
-            logger.error(f"Error in stream timer: {e}")
+            logger.error(f"Error in stream timer: {e}", exc_info=True)
             # Không stop streaming ngay, cho phép retry
     
     def _capture_single_frame(self):
@@ -249,14 +630,179 @@ class MainPresenter(QObject):
             frame = self._camera_service.get_frame(timeout_ms=1000)
             
             if frame is not None:
+                # Save as master image for teaching mode
+                self._teaching_master_image = frame.copy()
+                
                 self._view.display_image(frame)
-                self._view.show_message("Frame captured", "success")
+                self._view.show_message("Frame captured (saved as master image)", "success")
+                self._view.update_image_source_label("Captured from camera")
+                logger.info("Master image captured for teaching mode")
             else:
                 self._view.show_message("Failed to capture frame", "error")
                 
         except Exception as e:
             logger.error(f"Capture failed: {e}")
             self._view.show_message(f"Capture failed: {e}", "error")
+    
+    def _detect_qr_with_recipe(self, frame, recipe: Recipe, match_result: MatchResult):
+        """
+        Detect QR codes using recipe with transformed ROIs
+        
+        Args:
+            frame: Input frame
+            recipe: Current recipe
+            match_result: Template matching result
+        
+        Returns:
+            List of QRDetectionResult
+        """
+        if self._qr_service is None:
+            return []
+        
+        # Temporarily update QR service ROI regions based on recipe + offset
+        # Transform QR ROIs based on template match offset
+        transformed_rois = []
+        for qr_roi in recipe.qr_roi_regions:
+            if not qr_roi.enabled:
+                continue
+            
+            # Get absolute coordinates with offset
+            abs_x, abs_y, w, h = qr_roi.get_absolute_coords(
+                match_result.x,
+                match_result.y
+            )
+            
+            # Create temporary ROI for QR service
+            from app.model.qr.qr_detection_service import ROIRegion
+            temp_roi = ROIRegion(
+                name=qr_roi.name,
+                enabled=True,
+                x=abs_x,
+                y=abs_y,
+                width=w,
+                height=h,
+                use_percentage=False
+            )
+            transformed_rois.append(temp_roi)
+        
+        # Backup original ROIs
+        original_rois = self._qr_service.roi_regions
+        
+        # Set transformed ROIs
+        self._qr_service.roi_regions = transformed_rois
+        
+        # Detect QR codes
+        qr_results = self._qr_service.detect_qr_codes(frame)
+        
+        # Restore original ROIs
+        self._qr_service.roi_regions = original_rois
+        
+        return qr_results
+    
+    def on_barcode_enabled_changed(self, enabled: bool):
+        """User toggled barcode detection"""
+        logger.info(f"Barcode detection enabled: {enabled}")
+        # Barcode detection is always enabled when template is loaded
+        # This is just for UI state
+        pass
+    
+    def _append_qr_log(self, message: str):
+        """Append log message to QR results text box (deprecated, use barcode results)"""
+        try:
+            # Get current text
+            current_text = self._view.txt_barcode_results.toPlainText()
+            
+            # Append new message with timestamp
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            log_line = f"[{timestamp}] {message}"
+            
+            # Limit log size (keep last 100 lines)
+            lines = current_text.split('\n')
+            if len(lines) > 100:
+                lines = lines[-100:]
+            
+            lines.append(log_line.strip())
+            new_text = '\n'.join(lines)
+            
+            self._view.txt_barcode_results.setPlainText(new_text)
+            
+            # Auto scroll to bottom
+            scrollbar = self._view.txt_barcode_results.verticalScrollBar()
+            scrollbar.setValue(scrollbar.maximum())
+            
+        except Exception as e:
+            logger.error(f"Error appending QR log: {e}")
+    
+    # ========== Camera Settings Handlers ==========
+    
+    def on_camera_parameter_changed(self, param_name: str, value: Any):
+        """User changed camera parameter"""
+        logger.info(f"Camera parameter changed: {param_name} = {value}")
+        
+        # Map parameter names
+        param_map = {
+            'ExposureTime': 'ExposureTime',
+            'Gain': 'Gain',
+            'Gamma': 'Gamma',
+            'Contrast': 'Contrast',
+            'Saturation': 'Saturation'
+        }
+        
+        if param_name in param_map:
+            success = self._camera_service.set_parameter(param_map[param_name], value)
+            if success:
+                logger.info(f"Camera parameter {param_name} set to {value}")
+            else:
+                logger.warning(f"Failed to set camera parameter {param_name}")
+    
+    def on_save_camera_settings(self, settings: Dict[str, Any]) -> bool:
+        """User clicked Save Settings"""
+        logger.info("Saving camera settings")
+        
+        # Save to AppData
+        success = self._camera_settings_service.save_settings(settings)
+        
+        if success:
+            logger.info("Camera settings saved successfully")
+            self._view.show_message("Settings saved successfully", "success")
+        else:
+            logger.error("Failed to save camera settings")
+            self._view.show_message("Failed to save settings", "error")
+        
+        return success
+    
+    def on_load_camera_settings(self) -> Optional[Dict[str, Any]]:
+        """User clicked Load Settings"""
+        logger.info("Loading camera settings")
+        
+        # Load from AppData
+        settings = self._camera_settings_service.load_settings()
+        
+        if settings:
+            # Update UI controls
+            self._view.update_camera_settings_controls(settings)
+            
+            # Apply settings to camera if connected
+            if self._camera_service.is_connected():
+                if 'exposure_time' in settings:
+                    self._camera_service.set_parameter('ExposureTime', settings['exposure_time'])
+                if 'gain' in settings:
+                    self._camera_service.set_parameter('Gain', settings['gain'])
+                if 'brightness' in settings:
+                    self._camera_service.set_parameter('Gamma', settings['brightness'])
+                if 'contrast' in settings:
+                    self._camera_service.set_parameter('Contrast', settings['contrast'])
+                if 'saturation' in settings:
+                    self._camera_service.set_parameter('Saturation', settings['saturation'])
+            
+            logger.info("Camera settings loaded successfully")
+            self._view.show_message("Settings loaded successfully", "success")
+        else:
+            logger.info("No saved settings found")
+            self._view.show_message("No saved settings found", "info")
+        
+        return settings
     
     def _on_state_changed(self, old_state: AppState, new_state: AppState):
         """Callback khi state thay đổi"""

@@ -105,4 +105,9 @@ class IPresenter(ABC):
     def on_gain_changed(self, gain_value: int):
         """User thay đổi gain slider"""
         pass
+    
+    @abstractmethod
+    def on_qr_enabled_changed(self, enabled: bool):
+        """User thay đổi QR detection enable/disable"""
+        pass
 

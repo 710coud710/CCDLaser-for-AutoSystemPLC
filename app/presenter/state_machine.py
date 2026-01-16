@@ -15,6 +15,7 @@ class AppState(Enum):
     CONNECTING = "connecting"
     CONNECTED = "connected"
     STREAMING = "streaming"
+    RUNNING = "running"    # Running mode - chạy với template đã chọn
     ERROR = "error"
 
 
@@ -28,8 +29,9 @@ class StateMachine:
     VALID_TRANSITIONS = {
         AppState.IDLE: [AppState.CONNECTING],
         AppState.CONNECTING: [AppState.CONNECTED, AppState.ERROR, AppState.IDLE],
-        AppState.CONNECTED: [AppState.STREAMING, AppState.IDLE],
+        AppState.CONNECTED: [AppState.STREAMING, AppState.RUNNING, AppState.IDLE],
         AppState.STREAMING: [AppState.CONNECTED, AppState.ERROR],
+        AppState.RUNNING: [AppState.CONNECTED, AppState.ERROR],
         AppState.ERROR: [AppState.IDLE]
     }
     
@@ -113,4 +115,8 @@ class StateMachine:
     def is_streaming(self) -> bool:
         """Kiểm tra có đang streaming không"""
         return self._current_state == AppState.STREAMING
+    
+    def is_running(self) -> bool:
+        """Kiểm tra có đang ở Running mode không"""
+        return self._current_state == AppState.RUNNING
 

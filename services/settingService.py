@@ -56,7 +56,6 @@ class SettingService:
                         logger.info("Loaded qr.yaml")
             except Exception as e:
                 logger.error(f"Failed to load qr.yaml: {e}")
-        
         return merged_config
 
     def getSetting(self) -> dict:

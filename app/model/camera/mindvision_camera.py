@@ -212,8 +212,7 @@ class MindVisionCamera(CameraBase):
             
             # ⚠️ IMPORTANT: Copy data trước khi release buffer
             # Nếu không copy, data sẽ corrupt khi buffer bị ghi đè
-            image = image.copy()
-                                                                                                                                                                                                                
+            image = image.copy()                                                                                                             
             return image
             
         except self.mvsdk.CameraException as e:
@@ -246,6 +245,20 @@ class MindVisionCamera(CameraBase):
                 self.mvsdk.CameraSetExposureTime(self._handle, value)
             elif param_name == 'Gain':
                 self.mvsdk.CameraSetAnalogGain(self._handle, value)
+            elif param_name == 'Gamma':
+                # Gamma (Brightness) - range typically 1-100
+                self.mvsdk.CameraSetGamma(self._handle, value)
+            elif param_name == 'Contrast':
+                # Contrast - range typically -100 to 100
+                self.mvsdk.CameraSetContrast(self._handle, value)
+            elif param_name == 'Saturation':
+                # Saturation - range typically 0-100 (for color cameras)
+                self.mvsdk.CameraSetSaturation(self._handle, value)
+            elif param_name == 'ZoomWidth' or param_name == 'ZoomHeight':
+                # Zoom requires setting resolution with zoom parameters
+                # This is more complex, will handle separately
+                logger.warning(f"Zoom parameter requires resolution change, use set_zoom() method")
+                return False
             else:
                 logger.warning(f"Unknown parameter: {param_name}")
                 return False
@@ -255,6 +268,9 @@ class MindVisionCamera(CameraBase):
             
         except self.mvsdk.CameraException as e:
             logger.error(f"Set {param_name} failed({e.error_code}): {e.message}")
+            return False
+        except Exception as e:
+            logger.error(f"Set {param_name} failed: {e}")
             return False
     
     def get_parameter(self, param_name: str) -> Optional[Any]:
@@ -267,6 +283,12 @@ class MindVisionCamera(CameraBase):
                 return self.mvsdk.CameraGetExposureTime(self._handle)
             elif param_name == 'Gain':
                 return self.mvsdk.CameraGetAnalogGain(self._handle)
+            elif param_name == 'Gamma':
+                return self.mvsdk.CameraGetGamma(self._handle)
+            elif param_name == 'Contrast':
+                return self.mvsdk.CameraGetContrast(self._handle)
+            elif param_name == 'Saturation':
+                return self.mvsdk.CameraGetSaturation(self._handle)
             else:
                 return None
         except Exception as e:
