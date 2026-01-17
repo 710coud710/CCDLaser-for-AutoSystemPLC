@@ -6,7 +6,6 @@ import cv2
 import numpy as np
 from typing import List, Optional, Dict, Any, Tuple
 from dataclasses import dataclass
-from pyzbar import pyzbar
 import logging
 import os
 from datetime import datetime
@@ -180,13 +179,14 @@ class QRDetectionService:
                 processed_image = self.processor.preprocess_image(roi_image, attempt)
                 preprocessing_method = self.processor.get_preprocessing_name(attempt)
                 
-                # Detect QR codes
-                qr_codes = pyzbar.decode(processed_image)
+                # Detect QR codes using OpenCV
+                qr_detector = cv2.QRCodeDetector()
+                retval, decoded_info, points, straight_qrcode = qr_detector.detectAndDecodeMulti(processed_image)
                 
-                if qr_codes:
-                    for qr_code in qr_codes:
-                        # Extract data
-                        data = qr_code.data.decode('utf-8', errors='ignore')
+                if retval and decoded_info:
+                    for i, data in enumerate(decoded_info):
+                        if not data:  # Skip empty data
+                            continue
                         
                         # Validate
                         if not self._validate_qr_data(data):
@@ -194,12 +194,24 @@ class QRDetectionService:
                                 logger.warning(f"QR validation failed in {roi_region.name}: {data}")
                             continue
                         
-                        # Extract bounding box
-                        rect = qr_code.rect
-                        bbox = (rect.left, rect.top, rect.width, rect.height)
-                        
-                        # Extract polygon
-                        polygon = [(point.x, point.y) for point in qr_code.polygon]
+                        # Extract bounding box and polygon from points
+                        if points is not None and len(points) > i:
+                            point_set = points[i]
+                            if point_set is not None and len(point_set) > 0:
+                                # Convert points to bbox
+                                xs = [p[0] for p in point_set]
+                                ys = [p[1] for p in point_set]
+                                bbox = (int(min(xs)), int(min(ys)), 
+                                        int(max(xs) - min(xs)), int(max(ys) - min(ys)))
+                                
+                                # Polygon is the points themselves
+                                polygon = [(int(p[0]), int(p[1])) for p in point_set]
+                            else:
+                                bbox = (0, 0, 0, 0)
+                                polygon = []
+                        else:
+                            bbox = (0, 0, 0, 0)
+                            polygon = []
                         
                         # Create result
                         result = QRDetectionResult(
@@ -210,7 +222,7 @@ class QRDetectionService:
                             preprocessing_method=preprocessing_method,
                             bbox=bbox,
                             polygon=polygon,
-                            confidence=1.0  # pyzbar doesn't provide confidence
+                            confidence=1.0  # OpenCV doesn't provide confidence
                         )
                         
                         results.append(result)

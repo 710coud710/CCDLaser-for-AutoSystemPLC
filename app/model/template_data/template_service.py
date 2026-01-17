@@ -15,14 +15,6 @@ except ImportError:
     DMTX_AVAILABLE = False
     logging.warning("pylibdmtx not available - DataMatrix detection disabled")
 
-# Try to import pyzbar for better barcode/QR detection
-try:
-    from pyzbar import pyzbar
-    PYZBAR_AVAILABLE = True
-except ImportError:
-    PYZBAR_AVAILABLE = False
-    logging.warning("pyzbar not available - pyzbar detection disabled")
-
 from .template_model import Template, CropRegion
 
 logger = logging.getLogger(__name__)
@@ -397,39 +389,6 @@ class TemplateService:
         
         return dmtx_data_list
     
-    def _detect_barcode_pyzbar(self, roi: np.ndarray) -> List[str]:
-        """
-        Detect DataMatrix only using pyzbar (filter only DataMatrix)
-        
-        Args:
-            roi: Input ROI image
-        
-        Returns:
-            List of DataMatrix data strings
-        """
-        barcode_data_list = []
-        
-        if not PYZBAR_AVAILABLE:
-            return barcode_data_list
-        
-        try:
-            # Decode barcodes (supports QR, DataMatrix, Code128, EAN, etc.)
-            barcodes = pyzbar.decode(roi)
-            
-            if barcodes:
-                for barcode in barcodes:
-                    # Only accept DataMatrix
-                    if barcode.type == 'DATAMATRIX':
-                        data = barcode.data.decode('utf-8', errors='ignore')
-                        if data and data not in barcode_data_list:
-                            barcode_data_list.append(data)
-                            logger.debug(f"DataMatrix (pyzbar) detected: {data}")
-        
-        except Exception as e:
-            logger.debug(f"pyzbar decode failed: {e}")
-        
-        return barcode_data_list
-    
     def _get_method_name(self, method: int) -> str:
         """Get method name for logging"""
         method_names = {
@@ -537,7 +496,7 @@ class TemplateService:
                     # Save processed image to logccd/
                     self._save_processed_image(processed_roi, region.name, method, attempt)
                     
-                    # Try pylibdmtx DataMatrix first (most reliable for DataMatrix)
+                    # Try pylibdmtx DataMatrix (only method for DataMatrix)
                     if DMTX_AVAILABLE:
                         dmtx_data = self._detect_datamatrix_pylibdmtx(processed_roi)
                         if dmtx_data:
@@ -546,16 +505,6 @@ class TemplateService:
                                     barcode_data_list.append(data)
                                     logger.info(f"DataMatrix (pylibdmtx) found in '{region.name}' (method {method}, attempt {attempt+1}): {data}")
                                     found = True
-                    
-                    # Try pyzbar DataMatrix (filter only DataMatrix)
-                    if not found and PYZBAR_AVAILABLE:
-                        pyzbar_data = self._detect_barcode_pyzbar(processed_roi)
-                        if pyzbar_data:
-                            for data in pyzbar_data:
-                                if data and data not in barcode_data_list:
-                                    barcode_data_list.append(data)
-                                    logger.info(f"DataMatrix (pyzbar) found in '{region.name}' (method {method}, attempt {attempt+1}): {data}")
-                                    found = True
                 
                 if not barcode_data_list:
                     logger.warning(f"No DataMatrix found in '{region.name}' after {min(max_attempts, len(method_priority))} attempts")
@@ -563,7 +512,7 @@ class TemplateService:
                 barcode_results[region.name] = barcode_data_list
                 
             except Exception as e:
-                logger.error(f"Failed to scan DataMatrix in '{region.name}': {e}")
+                logger.error(f"Failed to scan DataMatrix in '{region.name}': {e}", exc_info=True)
                 barcode_results[region.name] = []
         
         return barcode_results
@@ -598,7 +547,8 @@ class TemplateService:
             }
             
         except Exception as e:
-            logger.error(f"Failed to process image: {e}", exc_info=True)
+            logger.error(f"Failed to process image with template '{template.name}': {e}", exc_info=True)
+            logger.error(f"Image shape: {image.shape if image is not None else 'None'}, template regions: {len(template.crop_regions)}")
             return {
                 'cropped_images': {},
                 'barcodes': {},

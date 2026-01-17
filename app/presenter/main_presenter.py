@@ -280,6 +280,7 @@ class MainPresenter(QObject):
         except Exception as e:
             logger.error(f"Failed to process test image: {e}", exc_info=True)
             self._view.show_message(f"Error: {str(e)}", "error")
+            logger.error(f"Test image processing failed - image shape: {self._test_image.shape if self._test_image is not None else 'None'}, template: {current_template.name if current_template else 'None'}")
     
     # ========== Template Mode Handlers ==========
     
@@ -504,9 +505,18 @@ class MainPresenter(QObject):
             self._view.show_message("Camera connected successfully", "success")
             
         except Exception as e:
-            logger.error(f"Connection failed: {e}")
+            logger.error(f"Connection failed: {e}", exc_info=True)
             self._state_machine.transition_to(AppState.ERROR)
             self._view.show_message(f"Connection failed: {e}", "error")
+            # Update camera info to disconnected state
+            try:
+                camera_info = self._camera_service.get_camera_info()
+                if camera_info:
+                    camera_info['is_connected'] = False
+                    camera_info['is_grabbing'] = False
+                    self._view.update_camera_info(camera_info)
+            except Exception as update_error:
+                logger.error(f"Failed to update camera info: {update_error}")
             self._state_machine.reset()
     
     def _disconnect_camera(self):
@@ -524,7 +534,7 @@ class MainPresenter(QObject):
             self._view.show_message("Camera disconnected", "info")
             
         except Exception as e:
-            logger.error(f"Disconnect failed: {e}")
+            logger.error(f"Disconnect failed: {e}", exc_info=True)
             self._view.show_message(f"Disconnect failed: {e}", "error")
     
     def _start_streaming(self):
@@ -547,7 +557,7 @@ class MainPresenter(QObject):
             self._view.show_message("Streaming started", "success")
             
         except Exception as e:
-            logger.error(f"Failed to start streaming: {e}")
+            logger.error(f"Failed to start streaming: {e}", exc_info=True)
             self._view.show_message(f"Failed to start streaming: {e}", "error")
     
     def _stop_streaming(self):
@@ -567,7 +577,7 @@ class MainPresenter(QObject):
             self._view.show_message("Streaming stopped", "info")
             
         except Exception as e:
-            logger.error(f"Failed to stop streaming: {e}")
+            logger.error(f"Failed to stop streaming: {e}", exc_info=True)
             self._view.show_message(f"Failed to stop streaming: {e}", "error")
     
     def _on_stream_timer(self):
@@ -641,7 +651,7 @@ class MainPresenter(QObject):
                 self._view.show_message("Failed to capture frame", "error")
                 
         except Exception as e:
-            logger.error(f"Capture failed: {e}")
+            logger.error(f"Capture failed: {e}", exc_info=True)
             self._view.show_message(f"Capture failed: {e}", "error")
     
     def _detect_qr_with_recipe(self, frame, recipe: Recipe, match_result: MatchResult):
@@ -732,7 +742,7 @@ class MainPresenter(QObject):
             scrollbar.setValue(scrollbar.maximum())
             
         except Exception as e:
-            logger.error(f"Error appending QR log: {e}")
+            logger.error(f"Error appending QR log: {e}", exc_info=True)
     
     # ========== Camera Settings Handlers ==========
     

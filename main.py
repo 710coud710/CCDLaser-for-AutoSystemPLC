@@ -18,29 +18,51 @@ def main():
     logger.info("CCDLaser - Camera Control System Started")
     try:
         # 2. Load configuration
-        settingService = getSettingService()
-        settings = settingService.getSetting()
+        logger.info("Loading configuration...")
+        try:
+            settingService = getSettingService()
+            settings = settingService.getSetting()
+            logger.info("Configuration loaded successfully")
+        except Exception as e:
+            logger.error(f"Failed to load configuration: {e}", exc_info=True)
+            raise
         
         # 3. Create Qt Application
+        logger.info("Creating Qt Application...")
         app = QApplication(sys.argv)
         app.setApplicationName("CCDLaser")
         app.setOrganizationName("CCDLaser")
         
         # Handle Ctrl+C gracefully
         signal.signal(signal.SIGINT, signal.SIG_DFL)
+        logger.info("Signal handlers registered")
         
         # 4. Create View
-        view = MainView()
+        logger.info("Creating MainView...")
+        try:
+            view = MainView()
+            logger.info("MainView created successfully")
+        except Exception as e:
+            logger.error(f"Failed to create MainView: {e}", exc_info=True)
+            raise
         
         # 5. Create Presenter (MVP pattern)
-        presenter = MainPresenter(view, settings)
+        logger.info("Creating MainPresenter...")
+        try:
+            presenter = MainPresenter(view, settings)
+            logger.info("MainPresenter created successfully")
+        except Exception as e:
+            logger.error(f"Failed to create MainPresenter: {e}", exc_info=True)
+            raise
         
         # 6. Connect View and Presenter
+        logger.info("Connecting View and Presenter...")
         view.set_presenter(presenter)
         
         # 7. Show window
+        logger.info("Showing main window...")
         view.show()
-        logger.info("Application already")
+        logger.info("Application ready - Main window displayed")
 
         # 8. Run event loop
         exit_code = app.exec()

@@ -233,7 +233,7 @@ class MindVisionCamera(CameraBase):
                 try:
                     self.mvsdk.CameraReleaseImageBuffer(self._handle, pRawData)
                 except Exception as e:
-                    logger.error(f"Failed to release buffer: {e}")
+                    logger.error(f"Failed to release buffer: {e}", exc_info=True)
     
     def set_parameter(self, param_name: str, value: Any) -> bool:
         """Set camera parameter (dùng trong runtime nếu cần)"""

@@ -88,7 +88,7 @@ class StateMachine:
             try:
                 self._state_change_callback(old_state, new_state)
             except Exception as e:
-                logger.error(f"Error in state change callback: {e}")
+                logger.error(f"Error in state change callback: {e}", exc_info=True)
         
         return True
     
@@ -102,7 +102,7 @@ class StateMachine:
             try:
                 self._state_change_callback(old_state, AppState.IDLE)
             except Exception as e:
-                logger.error(f"Error in state change callback: {e}")
+                logger.error(f"Error in state change callback: {e}", exc_info=True)
     
     def is_idle(self) -> bool:
         """Kiểm tra có đang ở IDLE không"""

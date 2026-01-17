@@ -700,22 +700,32 @@ class MainView(QMainWindow):
     
     def update_camera_info(self, info: dict):
         """Cập nhật thông tin camera"""
-        camera_type = info.get('type', '-')
-        camera_id = info.get('camera_id', '-')
-        is_connected = info.get('is_connected', False)
-        is_grabbing = info.get('is_grabbing', False)
-        
-        self.lbl_camera_type.setText(f"Type: {camera_type}")
-        self.lbl_camera_id.setText(f"ID: {camera_id}")
-        
-        if is_grabbing:
-            status = "Streaming"
-        elif is_connected:
-            status = "Connected"
-        else:
-            status = "Disconnected"
-        
-        self.lbl_camera_status.setText(f"Status: {status}")
+        try:
+            if info is None:
+                info = {}
+            
+            camera_type = info.get('type', '-')
+            camera_id = info.get('camera_id', '-')
+            is_connected = info.get('is_connected', False)
+            is_grabbing = info.get('is_grabbing', False)
+            
+            self.lbl_camera_type.setText(f"Type: {camera_type}")
+            self.lbl_camera_id.setText(f"ID: {camera_id}")
+            
+            if is_grabbing:
+                status = "Streaming"
+            elif is_connected:
+                status = "Connected"
+            else:
+                status = "Disconnected"
+            
+            self.lbl_camera_status.setText(f"Status: {status}")
+        except Exception as e:
+            logger.error(f"Failed to update camera info: {e}", exc_info=True)
+            # Set default values on error
+            self.lbl_camera_type.setText("Type: -")
+            self.lbl_camera_id.setText("ID: -")
+            self.lbl_camera_status.setText("Status: Disconnected")
     
     # ========== Event Handlers ==========
     
