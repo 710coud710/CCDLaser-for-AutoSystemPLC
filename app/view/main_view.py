@@ -116,9 +116,9 @@ class MainView(QMainWindow):
         
         layout.addWidget(self.mode_tabs)
         
-        # Camera info (chung)
-        # info_group = self._create_camera_info_group()
-        # layout.addWidget(info_group)
+        # Camera info (chung) - hiển thị ở dưới cùng
+        info_group = self._create_camera_info_group()
+        layout.addWidget(info_group)
         
         # Spacer
         layout.addStretch()
@@ -557,10 +557,6 @@ class MainView(QMainWindow):
         return widget
     
     def _create_camera_info_group(self) -> QGroupBox:
-        """
-        Tạo camera info bar (1 hàng ngang ở dưới cùng)
-        Chỉ hiển thị thông tin, không có gain (gain đã ở tab Setting)
-        """
         info_group = QGroupBox("Camera Info")
         info_layout = QHBoxLayout()
         
@@ -704,6 +700,11 @@ class MainView(QMainWindow):
             if info is None:
                 info = {}
             
+            # Kiểm tra xem các label đã được khởi tạo chưa
+            if not hasattr(self, 'lbl_camera_type'):
+                logger.warning("lbl_camera_type not initialized, skipping update")
+                return
+            
             camera_type = info.get('type', '-')
             camera_id = info.get('camera_id', '-')
             is_connected = info.get('is_connected', False)
@@ -720,12 +721,19 @@ class MainView(QMainWindow):
                 status = "Disconnected"
             
             self.lbl_camera_status.setText(f"Status: {status}")
+        except AttributeError as e:
+            logger.error(f"Camera info labels not initialized: {e}", exc_info=True)
+            # Không cố gắng set text nếu label chưa tồn tại
         except Exception as e:
             logger.error(f"Failed to update camera info: {e}", exc_info=True)
-            # Set default values on error
-            self.lbl_camera_type.setText("Type: -")
-            self.lbl_camera_id.setText("ID: -")
-            self.lbl_camera_status.setText("Status: Disconnected")
+            # Chỉ set default values nếu label đã tồn tại
+            if hasattr(self, 'lbl_camera_type'):
+                try:
+                    self.lbl_camera_type.setText("Type: -")
+                    self.lbl_camera_id.setText("ID: -")
+                    self.lbl_camera_status.setText("Status: Disconnected")
+                except Exception:
+                    pass
     
     # ========== Event Handlers ==========
     

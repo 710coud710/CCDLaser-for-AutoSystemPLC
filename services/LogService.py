@@ -112,11 +112,9 @@ class ThreadLogger:
                         LogFormatter(log_format, "%Y-%m-%d %H:%M:%S")
                     )
                     file_handler.setLevel(logging.DEBUG)
-
                     # Thêm handlers vào logger
                     logger.addHandler(console_handler)
                     logger.addHandler(file_handler)
-                    
                     # Log khởi động
                     logger.info("--------------------------------- Starting Logger ---------------------------------")
                     logger.info(f"Logger initialized: {log_name}")
