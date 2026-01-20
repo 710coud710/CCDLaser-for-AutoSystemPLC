@@ -70,6 +70,14 @@ class CameraBase(ABC):
             Giá trị tham số hoặc None
         """
         pass
+
+    def get_parameter_range(self, param_name: str) -> Optional[tuple]:
+        """
+        Lấy min/max cho tham số (nếu camera hỗ trợ)
+        Returns:
+            (min, max) hoặc None nếu không hỗ trợ
+        """
+        return None
     
     @property
     def is_connected(self) -> bool:

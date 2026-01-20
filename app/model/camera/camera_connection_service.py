@@ -155,6 +155,16 @@ class CameraConnectionService:
         except Exception as e:
             logger.error(f"Failed to get parameter: {e}")
             return None
+
+    def get_parameter_range(self, param_name: str) -> Optional[tuple]:
+        """Lấy min/max tham số nếu camera hỗ trợ."""
+        if self._camera is None:
+            return None
+        try:
+            return self._camera.get_parameter_range(param_name)
+        except Exception as e:
+            logger.error(f"Failed to get parameter range: {e}")
+            return None
     
     def is_connected(self) -> bool:
         """Kiểm tra camera đã kết nối chưa"""

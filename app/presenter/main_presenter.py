@@ -701,6 +701,8 @@ class MainPresenter(QObject):
                 logger.info("Applying saved camera settings...")
                 # Update UI controls
                 self._view.update_camera_settings_controls(saved_settings)
+                # Update ranges if available
+                self._apply_camera_ranges()
                 # Apply to camera
                 if 'exposure_time' in saved_settings:
                     self._camera_service.set_parameter('ExposureTime', saved_settings['exposure_time'])
@@ -713,6 +715,13 @@ class MainPresenter(QObject):
                 if 'saturation' in saved_settings:
                     self._camera_service.set_parameter('Saturation', saved_settings['saturation'])
                 logger.info("Saved camera settings applied")
+            else:
+                # No saved settings → pull current camera defaults and reflect to UI
+                defaults = self._get_camera_default_settings()
+                if defaults:
+                    logger.info("Loaded camera defaults (no saved settings), updating UI")
+                    self._view.update_camera_settings_controls(defaults)
+                    self._apply_camera_ranges()
             
             self._view.show_message("Camera connected successfully", "success")
 
@@ -994,6 +1003,10 @@ class MainPresenter(QObject):
     def on_save_camera_settings(self, settings: Dict[str, Any]) -> bool:
         """User clicked Save Settings"""
         logger.info("Saving camera settings")
+        # Include current camera ranges (for reference) if available
+        ranges = self._get_camera_param_ranges()
+        if ranges:
+            settings = {**settings, **ranges}
         
         # Save to AppData
         success = self._camera_settings_service.save_settings(settings)
@@ -1017,6 +1030,17 @@ class MainPresenter(QObject):
         if settings:
             # Update UI controls
             self._view.update_camera_settings_controls(settings)
+            # Apply ranges from settings (in case camera not connected)
+            if hasattr(self._view, "update_camera_setting_ranges"):
+                ranges = {
+                    'exposure_time_range': settings.get('exposure_time_range'),
+                    'gain_range': settings.get('gain_range'),
+                    'brightness_range': settings.get('brightness_range'),
+                    'contrast_range': settings.get('contrast_range'),
+                    'saturation_range': settings.get('saturation_range'),
+                }
+                self._view.update_camera_setting_ranges(ranges)
+            self._apply_camera_ranges()
             
             # Apply settings to camera if connected
             if self._camera_service.is_connected():
@@ -1034,10 +1058,55 @@ class MainPresenter(QObject):
             logger.info("Camera settings loaded successfully")
             self._view.show_message("Settings loaded successfully", "success")
         else:
-            logger.info("No saved settings found")
-            self._view.show_message("No saved settings found", "info")
+            # Fallback: read current camera parameters as defaults
+            defaults = self._get_camera_default_settings()
+            if defaults:
+                logger.info("No saved settings; using camera defaults")
+                self._view.update_camera_settings_controls(defaults)
+                self._apply_camera_ranges()
+                self._view.show_message("Loaded defaults from camera", "info")
+            else:
+                logger.info("No saved settings found")
+                self._view.show_message("No saved settings found", "info")
         
         return settings
+
+    def _get_camera_default_settings(self) -> Dict[str, Any]:
+        """Get current camera parameters as defaults when no saved settings exist."""
+        if not self._camera_service.is_connected():
+            return {}
+
+        params = {
+            'exposure_time': self._camera_service.get_parameter('ExposureTime'),
+            'gain': self._camera_service.get_parameter('Gain'),
+            'brightness': self._camera_service.get_parameter('Gamma'),
+            'contrast': self._camera_service.get_parameter('Contrast'),
+            'saturation': self._camera_service.get_parameter('Saturation'),
+        }
+        # Remove None entries
+        return {k: v for k, v in params.items() if v is not None}
+
+    def _get_camera_param_ranges(self) -> Dict[str, Any]:
+        """Get parameter ranges from camera if available."""
+        if not self._camera_service.is_connected():
+            return {}
+        ranges = {
+            'exposure_time_range': self._camera_service.get_parameter_range('ExposureTime'),
+            'gain_range': self._camera_service.get_parameter_range('Gain'),
+            'brightness_range': self._camera_service.get_parameter_range('Gamma'),
+            'contrast_range': self._camera_service.get_parameter_range('Contrast'),
+            'saturation_range': self._camera_service.get_parameter_range('Saturation'),
+        }
+        return {k: v for k, v in ranges.items() if v is not None}
+
+    def _apply_camera_ranges(self):
+        """Push camera parameter ranges to view if available."""
+        ranges = self._get_camera_param_ranges()
+        if ranges and hasattr(self._view, "update_camera_setting_ranges"):
+            try:
+                self._view.update_camera_setting_ranges(ranges)
+            except Exception as e:
+                logger.error(f"Failed to apply camera ranges: {e}", exc_info=True)
     
     def _on_state_changed(self, old_state: AppState, new_state: AppState):
         """Callback khi state thay đổi"""

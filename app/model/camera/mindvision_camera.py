@@ -294,6 +294,32 @@ class MindVisionCamera(CameraBase):
         except Exception as e:
             logger.error(f"Get {param_name} failed: {e}")
             return None
+
+    def get_parameter_range(self, param_name: str) -> Optional[tuple]:
+        """Get min/max range for supported parameters."""
+        if not self._is_connected:
+            return None
+
+        try:
+            if param_name == 'Gain':
+                # MindVision analog gain typically 1.0 - 22.0
+                return (1.0, 22.0)
+            if param_name == 'ExposureTime':
+                # Try SDK range call if available, else fallback to typical microsecond range
+                try:
+                    return self.mvsdk.CameraGetExposureTimeRange(self._handle)
+                except Exception:
+                    return (16.0, 419428.0)  # us, typical MV range
+            if param_name == 'Gamma':
+                return (1.0, 100.0)
+            if param_name == 'Contrast':
+                return (-100.0, 100.0)
+            if param_name == 'Saturation':
+                return (0.0, 100.0)
+        except Exception as e:
+            logger.error(f"Get range {param_name} failed: {e}")
+            return None
+        return None
     
     def _enumerate_devices(self) -> List:
         try:

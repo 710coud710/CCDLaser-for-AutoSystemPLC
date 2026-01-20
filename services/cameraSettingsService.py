@@ -100,6 +100,12 @@ class CameraSettingsService:
             'contrast': 0,  # -100 to 100
             'saturation': 50,  # 0-100
             'zoom_width': 0,  # 0 = disabled
-            'zoom_height': 0  # 0 = disabled
+            'zoom_height': 0,  # 0 = disabled
+            # Optional ranges (fallback defaults; will be overwritten by actual camera ranges if available)
+            'exposure_time_range': [16, 419428],
+            'gain_range': [1.0, 22.0],
+            'brightness_range': [1.0, 100.0],
+            'contrast_range': [-100.0, 100.0],
+            'saturation_range': [0.0, 100.0],
         }
 

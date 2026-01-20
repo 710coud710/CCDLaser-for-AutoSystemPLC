@@ -837,6 +837,15 @@ class MainView(QMainWindow):
             self.spin_zoom_width.setValue(settings['zoom_width'])
         if 'zoom_height' in settings:
             self.spin_zoom_height.setValue(settings['zoom_height'])
+
+    def update_camera_setting_ranges(self, ranges: dict):
+        """Update control ranges (min/max) if provided."""
+        exp_range = ranges.get('exposure_time_range')
+        if exp_range and len(exp_range) == 2:
+            self.spin_exposure.setRange(int(exp_range[0]), int(exp_range[1]))
+        gain_range = ranges.get('gain_range')
+        if gain_range and len(gain_range) == 2:
+            self.spin_gain_setting.setRange(float(gain_range[0]), float(gain_range[1]))
     
     def _on_barcode_enabled_changed(self, state: int):
         """Handle barcode enabled checkbox change"""

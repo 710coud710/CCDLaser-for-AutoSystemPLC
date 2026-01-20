@@ -59,6 +59,14 @@ class IView(ABC):
         """
         pass
 
+    @abstractmethod
+    def update_camera_setting_ranges(self, ranges: dict):
+        """
+        Cập nhật range cho các control camera (nếu có)
+        ranges keys: exposure_time_range, gain_range, brightness_range, contrast_range, saturation_range
+        """
+        pass
+
 
 class IPresenter(ABC):
     """
