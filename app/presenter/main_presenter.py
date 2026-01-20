@@ -188,25 +188,118 @@ class MainPresenter(QObject):
     # ========== Running Mode Handlers ==========
     
     def on_load_template_clicked(self, template_name: str):
-        """User click Load Template (Running Mode)"""
-        logger.info(f"Load template clicked (Running Mode): {template_name}")
+        """Load a template (used by both Running Mode and Template Mode)."""
+        logger.info(f"Load template: {template_name}")
         
         template = self._template_service.load_template(template_name)
         if template:
             self._template_service.set_current_template(template)
-            
-            info = f"Template: {template.name}\n"
-            info += f"{template.description}\n"
-            info += f"Crop regions: {len(template.crop_regions)}\n"
-            # Count barcode regions (crop regions with scan_barcode=True)
-            barcode_count = sum(1 for r in template.crop_regions if r.scan_barcode)
-            info += f"Barcode regions: {barcode_count}\n"
-            info += f"Image size: {template.master_image_width}x{template.master_image_height}"
-            
-            self._view.update_current_template_info(info)
+            self._view.update_current_template_info(self._build_template_info(template))
+            # Ensure Template Mode shows the right panels when a template is loaded (auto-load from combo)
+            if hasattr(self._view, "_set_template_tab_mode"):
+                try:
+                    self._view._set_template_tab_mode("browse")
+                except Exception:
+                    pass
+            # Update region editor list (Template Mode)
+            if hasattr(self._view, "update_template_regions_table"):
+                self._view.update_template_regions_table(template.crop_regions)
             self._view.show_message(f"Template '{template_name}' loaded", "success")
         else:
             self._view.show_message(f"Failed to load template '{template_name}'", "error")
+
+    def _build_template_info(self, template: Template) -> str:
+        info = f"Template: {template.name}\n"
+        info += f"{template.description}\n"
+        info += f"Crop regions: {len(template.crop_regions)}\n"
+        barcode_count = sum(1 for r in template.crop_regions if r.scan_barcode)
+        info += f"Barcode regions: {barcode_count}\n"
+        info += f"Image size: {template.master_image_width}x{template.master_image_height}"
+        return info
+
+    def on_current_template_region_added(self, name: str, x: int, y: int, width: int, height: int, scan_barcode: bool = True):
+        """Add a new region to the currently loaded template (Template Mode editor)."""
+        template = self._template_service.get_current_template()
+        if template is None:
+            self._view.show_message("Please load a template first", "warning")
+            return
+
+        try:
+            template.crop_regions.append(CropRegion(
+                name=name, x=x, y=y, width=width, height=height,
+                enabled=True, scan_barcode=scan_barcode
+            ))
+
+            if self._template_service.save_template(template):
+                # Keep current template in memory updated
+                self._template_service.set_current_template(template)
+                self._view.update_current_template_info(self._build_template_info(template))
+                if hasattr(self._view, "update_template_regions_table"):
+                    self._view.update_template_regions_table(template.crop_regions)
+                self._view.show_message(f"Region '{name}' added", "success")
+            else:
+                self._view.show_message("Failed to save template after adding region", "error")
+        except Exception as e:
+            logger.error(f"Failed to add region to current template: {e}", exc_info=True)
+            self._view.show_message(f"Error adding region: {e}", "error")
+
+    def on_current_template_region_updated(self, index: int, x: int, y: int, width: int, height: int, scan_barcode: bool = True):
+        """Update ROI of an existing region in the currently loaded template."""
+        template = self._template_service.get_current_template()
+        if template is None:
+            self._view.show_message("Please load a template first", "warning")
+            return
+
+        if index < 0 or index >= len(template.crop_regions):
+            self._view.show_message("Invalid region selected", "warning")
+            return
+
+        try:
+            region = template.crop_regions[index]
+            region.x = int(x)
+            region.y = int(y)
+            region.width = int(width)
+            region.height = int(height)
+            region.scan_barcode = bool(scan_barcode)
+
+            if self._template_service.save_template(template):
+                self._template_service.set_current_template(template)
+                self._view.update_current_template_info(self._build_template_info(template))
+                if hasattr(self._view, "update_template_regions_table"):
+                    self._view.update_template_regions_table(template.crop_regions)
+                self._view.show_message(f"Region '{region.name}' updated", "success")
+            else:
+                self._view.show_message("Failed to save template after updating region", "error")
+        except Exception as e:
+            logger.error(f"Failed to update region in current template: {e}", exc_info=True)
+            self._view.show_message(f"Error updating region: {e}", "error")
+
+    def on_current_template_region_deleted(self, index: int):
+        """Delete a region from the currently loaded template."""
+        template = self._template_service.get_current_template()
+        if template is None:
+            self._view.show_message("Please load a template first", "warning")
+            return
+
+        if index < 0 or index >= len(template.crop_regions):
+            self._view.show_message("Invalid region selected", "warning")
+            return
+
+        try:
+            region_name = template.crop_regions[index].name
+            template.crop_regions.pop(index)
+
+            if self._template_service.save_template(template):
+                self._template_service.set_current_template(template)
+                self._view.update_current_template_info(self._build_template_info(template))
+                if hasattr(self._view, "update_template_regions_table"):
+                    self._view.update_template_regions_table(template.crop_regions)
+                self._view.show_message(f"Region '{region_name}' deleted", "success")
+            else:
+                self._view.show_message("Failed to save template after deleting region", "error")
+        except Exception as e:
+            logger.error(f"Failed to delete region in current template: {e}", exc_info=True)
+            self._view.show_message(f"Error deleting region: {e}", "error")
     
     def on_refresh_templates_clicked(self):
         """User click Refresh Templates (Running Mode)"""
@@ -622,6 +715,15 @@ class MainPresenter(QObject):
                 logger.info("Saved camera settings applied")
             
             self._view.show_message("Camera connected successfully", "success")
+
+            # Auto-start streaming right after successful connection
+            try:
+                logger.info("Auto-start streaming after connect")
+                self._start_streaming()
+            except Exception as auto_stream_err:
+                logger.error(f"Auto-start streaming failed: {auto_stream_err}", exc_info=True)
+                # Keep connected state; inform user
+                self._view.show_message(f"Connected but failed to start stream: {auto_stream_err}", "warning")
             
         except Exception as e:
             logger.error(f"Connection failed: {e}", exc_info=True)

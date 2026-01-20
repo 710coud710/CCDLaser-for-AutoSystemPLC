@@ -10,7 +10,8 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QGroupBox, QMessageBox, QStatusBar,
     QSlider, QSpinBox, QCheckBox, QTextEdit, QComboBox,
-    QLineEdit, QTabWidget, QScrollArea
+    QLineEdit, QTabWidget, QScrollArea,
+    QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QRect, QPoint
 from PySide6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QIcon
@@ -36,6 +37,14 @@ class MainView(QMainWindow):
         # ROI selection state
         self._roi_selection_mode = None  # None, 'template', or 'qr_roi'
         self._last_captured_image: Optional[np.ndarray] = None
+
+        # Template UI helper state
+        self._suppress_template_autoload = False
+        self._pending_region_edit_row = -1
+
+        # Shared show-regions flag (sync between Running/Template tabs)
+        self._show_regions_enabled = True
+        self._syncing_show_regions = False
         
         self._init_ui()
         logger.info("MainView initialized")
@@ -117,8 +126,8 @@ class MainView(QMainWindow):
         layout.addWidget(self.mode_tabs)
         
         # Camera info (chung) - hiển thị ở dưới cùng
-        info_group = self._create_camera_info_group()
-        layout.addWidget(info_group)
+        # info_group = self._create_camera_info_group()
+        # layout.addWidget(info_group)
         
         # Spacer
         layout.addStretch()
@@ -150,39 +159,19 @@ class MainView(QMainWindow):
         stream_layout = QHBoxLayout()  # Xếp ngang
         stream_layout.setSpacing(5)  # Khoảng cách giữa các nút
         
-        # Helper function để tạo icon với fallback
-        def get_icon(theme_names, fallback_text):
-            """Lấy icon từ theme hoặc tạo icon từ text"""
-            for theme_name in theme_names:
-                icon = QIcon.fromTheme(theme_name)
-                if not icon.isNull():
-                    return icon
-            # Fallback: Tạo icon từ text symbol (Unicode)
-            pixmap = QPixmap(32, 32)
-            pixmap.fill(Qt.transparent)
-            painter = QPainter(pixmap)
-            painter.setPen(QColor(50, 50, 50))  # Màu xám đậm
-            font = painter.font()
-            font.setPixelSize(22)
-            font.setBold(True)
-            painter.setFont(font)
-            painter.drawText(pixmap.rect(), Qt.AlignCenter, fallback_text)
-            painter.end()
-            return QIcon(pixmap)
-        
-        # Start Stream button với icon
+        # Start Stream button dùng icon, bỏ chữ
         self.btn_start_stream = QPushButton()
-        start_icon = get_icon(["media-playback-start", "media-play", "play"], "▶")
+        start_icon = QIcon("assets/svg/play.svg")
         self.btn_start_stream.setIcon(start_icon)
         self.btn_start_stream.setToolTip("Start Stream")
+        # self.btn_start_stream.setText("")  # Bỏ chữ, chỉ để icon
         self.btn_start_stream.clicked.connect(self._on_start_stream_clicked)
         self.btn_start_stream.setEnabled(False)
         self.btn_start_stream.setMinimumSize(40, 40)  # Kích thước icon button
         stream_layout.addWidget(self.btn_start_stream)
-        
-        # Stop Stream button với icon
+        # Stop Stream button dùng icon, bỏ chữ
         self.btn_stop_stream = QPushButton()
-        stop_icon = get_icon(["media-playback-stop", "media-stop", "stop"], "■")
+        stop_icon = QIcon("assets/svg/stop.svg")
         self.btn_stop_stream.setIcon(stop_icon)
         self.btn_stop_stream.setToolTip("Stop Stream")
         self.btn_stop_stream.clicked.connect(self._on_stop_stream_clicked)
@@ -193,7 +182,7 @@ class MainView(QMainWindow):
         
         # Capture Image button với icon
         self.btn_capture = QPushButton()
-        capture_icon = get_icon(["camera-photo", "camera", "camera-web"], "●")
+        capture_icon = QIcon("assets/svg/capture.svg")
         self.btn_capture.setIcon(capture_icon)
         self.btn_capture.setToolTip("Capture Image")
         self.btn_capture.clicked.connect(self._on_capture_clicked)
@@ -212,9 +201,85 @@ class MainView(QMainWindow):
         """Tạo panel cho Template Mode - Simple template system"""
         widget = QWidget()
         layout = QVBoxLayout()
+
+        # === TEMPLATE SELECTION (TOP, auto-load) ===
+        template_select_group = QGroupBox("Template")
+        template_select_layout = QVBoxLayout()
+
+        top_row = QHBoxLayout()
+        top_row.addWidget(QLabel("Select Template:"))
+        self.combo_template = QComboBox()
+        self.combo_template.addItem("-- No Template --")
+        self.combo_template.currentTextChanged.connect(self._on_template_combo_changed)
+        top_row.addWidget(self.combo_template, 1)
+
+        self.btn_refresh_templates = QPushButton()
+        refresh_icon = QIcon("assets/svg/refresh.svg")
+        self.btn_refresh_templates.setIcon(refresh_icon)
+        self.btn_refresh_templates.setToolTip("Refresh Templates")
+        self.btn_refresh_templates.clicked.connect(self._on_refresh_templates_clicked)
+        top_row.addWidget(self.btn_refresh_templates)
+
+        self.btn_new_template = QPushButton()
+        new_icon = QIcon("assets/svg/add.svg")
+        self.btn_new_template.setIcon(new_icon)
+        self.btn_new_template.setToolTip("New Template")
+        self.btn_new_template.clicked.connect(self._on_new_template_clicked)
+        top_row.addWidget(self.btn_new_template)
+
+        template_select_layout.addLayout(top_row)
+
+        self.lbl_current_template_info = QLabel("No template loaded")
+        self.lbl_current_template_info.setStyleSheet("color: #888;")
+        self.lbl_current_template_info.setWordWrap(True)
+        template_select_layout.addWidget(self.lbl_current_template_info)
+
+        template_select_group.setLayout(template_select_layout)
+        layout.addWidget(template_select_group)
+
+        # === REGION EDITOR (CRUD for selected template) ===
+        self.region_editor_group = QGroupBox("Regions")
+        region_editor_layout = QVBoxLayout()
+
+        btn_row = QHBoxLayout()
+        self.btn_region_add = QPushButton("Add")
+        self.btn_region_add.clicked.connect(self._on_region_add_clicked)
+        self.btn_region_add.setEnabled(False)
+        btn_row.addWidget(self.btn_region_add)
+
+        self.btn_region_edit = QPushButton("Edit")
+        self.btn_region_edit.clicked.connect(self._on_region_edit_clicked)
+        self.btn_region_edit.setEnabled(False)
+        btn_row.addWidget(self.btn_region_edit)
+
+        self.btn_region_delete = QPushButton("Delete")
+        self.btn_region_delete.clicked.connect(self._on_region_delete_clicked)
+        self.btn_region_delete.setEnabled(False)
+        btn_row.addWidget(self.btn_region_delete)
+
+        self.chk_region_scan_barcode = QCheckBox("Scan Barcode")
+        self.chk_region_scan_barcode.setChecked(True)
+        btn_row.addWidget(self.chk_region_scan_barcode)
+
+        btn_row.addStretch()
+        region_editor_layout.addLayout(btn_row)
+
+        self.table_template_regions = QTableWidget(0, 7)
+        self.table_template_regions.setHorizontalHeaderLabels(
+            ["Name", "X", "Y", "W", "H", "Barcode", "Enabled"]
+        )
+        self.table_template_regions.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table_template_regions.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table_template_regions.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table_template_regions.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table_template_regions.itemSelectionChanged.connect(self._on_region_table_selection_changed)
+        region_editor_layout.addWidget(self.table_template_regions)
+
+        self.region_editor_group.setLayout(region_editor_layout)
+        layout.addWidget(self.region_editor_group)
         
         # === TEMPLATE CREATION SECTION ===
-        creation_group = QGroupBox("Create New Template")
+        self.creation_group = QGroupBox("Create New Template")
         creation_layout = QVBoxLayout()
         
         # Load master image
@@ -265,34 +330,12 @@ class MainView(QMainWindow):
         self.btn_save_template.setEnabled(False)
         creation_layout.addWidget(self.btn_save_template)
         
-        creation_group.setLayout(creation_layout)
-        layout.addWidget(creation_group)
+        self.creation_group.setLayout(creation_layout)
+        layout.addWidget(self.creation_group)
         
         # === TEMPLATE PROCESSING SECTION ===
-        processing_group = QGroupBox("Process with Template")
+        self.processing_group = QGroupBox("Process with Template")
         processing_layout = QVBoxLayout()
-        
-        # Template selection
-        processing_layout.addWidget(QLabel("Select Template:"))
-        self.combo_template = QComboBox()
-        self.combo_template.addItem("-- No Template --")
-        processing_layout.addWidget(self.combo_template)
-        
-        btn_layout2 = QHBoxLayout()
-        self.btn_load_template = QPushButton("Load Template")
-        self.btn_load_template.clicked.connect(self._on_load_template_clicked)
-        btn_layout2.addWidget(self.btn_load_template)
-        
-        self.btn_refresh_templates = QPushButton("Refresh")
-        self.btn_refresh_templates.clicked.connect(self._on_refresh_templates_clicked)
-        btn_layout2.addWidget(self.btn_refresh_templates)
-        processing_layout.addLayout(btn_layout2)
-        
-        # Current template info
-        self.lbl_current_template_info = QLabel("No template loaded")
-        self.lbl_current_template_info.setStyleSheet("color: #888;")
-        self.lbl_current_template_info.setWordWrap(True)
-        processing_layout.addWidget(self.lbl_current_template_info)
         
         # Load test image
         processing_layout.addWidget(QLabel("Load Image to Process:"))
@@ -320,17 +363,42 @@ class MainView(QMainWindow):
         
         # Visualization options
         vis_layout = QHBoxLayout()
-        self.chk_show_regions = QCheckBox("Show Regions")
-        self.chk_show_regions.setChecked(True)
-        vis_layout.addWidget(self.chk_show_regions)
+        self.chk_show_regions_template = QCheckBox("Show Regions")
+        self.chk_show_regions_template.setChecked(self._show_regions_enabled)
+        self.chk_show_regions_template.stateChanged.connect(self._on_show_regions_changed)
+        vis_layout.addWidget(self.chk_show_regions_template)
         processing_layout.addLayout(vis_layout)
         
-        processing_group.setLayout(processing_layout)
-        layout.addWidget(processing_group)
+        self.processing_group.setLayout(processing_layout)
+        layout.addWidget(self.processing_group)
         
         layout.addStretch()
         widget.setLayout(layout)
+
+        # Default visibility: browsing templates (no create config shown until New Template)
+        self._set_template_tab_mode("none")
         return widget
+
+    def _set_template_tab_mode(self, mode: str):
+        """
+        Control what is visible in Template Mode to avoid showing redundant UI.
+        mode:
+          - "none": no template selected, hide Regions/Process/Create
+          - "browse": template selected, show Regions + Process, hide Create
+          - "create": creating new template, show Create, hide Regions + Process
+        """
+        if mode not in ("none", "browse", "create"):
+            mode = "none"
+
+        show_create = (mode == "create")
+        show_browse = (mode == "browse")
+
+        if hasattr(self, "creation_group"):
+            self.creation_group.setVisible(show_create)
+        if hasattr(self, "region_editor_group"):
+            self.region_editor_group.setVisible(show_browse)
+        if hasattr(self, "processing_group"):
+            self.processing_group.setVisible(show_browse)
     
     def _create_running_mode_panel(self) -> QWidget:
         widget = QWidget()
@@ -377,9 +445,10 @@ class MainView(QMainWindow):
         self.chk_barcode_enabled.stateChanged.connect(self._on_barcode_enabled_changed)
         barcode_layout.addWidget(self.chk_barcode_enabled)
         
-        self.chk_show_regions = QCheckBox("Show Regions")
-        self.chk_show_regions.setChecked(True)
-        barcode_layout.addWidget(self.chk_show_regions)
+        self.chk_show_regions_running = QCheckBox("Show Regions")
+        self.chk_show_regions_running.setChecked(self._show_regions_enabled)
+        self.chk_show_regions_running.stateChanged.connect(self._on_show_regions_changed)
+        barcode_layout.addWidget(self.chk_show_regions_running)
 
         # Manual Start button: capture frame from camera and process with template
         self.btn_manual_start = QPushButton("Manual Start (Capture && Process)")
@@ -636,7 +705,10 @@ class MainView(QMainWindow):
             self.btn_stop_stream.setEnabled(True)
             self.btn_capture.setEnabled(True)
             self.chk_barcode_enabled.setEnabled(True)
-            self.chk_show_regions.setEnabled(True)
+            if hasattr(self, "chk_show_regions_running"):
+                self.chk_show_regions_running.setEnabled(True)
+            if hasattr(self, "chk_show_regions_template"):
+                self.chk_show_regions_template.setEnabled(True)
     
     def display_image(self, image: np.ndarray):
         """Hiển thị ảnh"""
@@ -769,16 +841,121 @@ class MainView(QMainWindow):
     def _on_barcode_enabled_changed(self, state: int):
         """Handle barcode enabled checkbox change"""
         enabled = (state == 2)  # Qt.Checked = 2
-        self.chk_show_regions.setEnabled(enabled)
+        if hasattr(self, "chk_show_regions_running"):
+            self.chk_show_regions_running.setEnabled(enabled)
+        if hasattr(self, "chk_show_regions_template"):
+            self.chk_show_regions_template.setEnabled(enabled)
         
         if self._presenter:
             self._presenter.on_barcode_enabled_changed(enabled)
+
+    def _on_show_regions_changed(self, state: int):
+        """Sync show-regions between Running/Template tabs."""
+        if self._syncing_show_regions:
+            return
+        self._syncing_show_regions = True
+        try:
+            self._show_regions_enabled = (state == 2)  # Qt.Checked = 2
+            if hasattr(self, "chk_show_regions_running") and self.chk_show_regions_running.isChecked() != self._show_regions_enabled:
+                self.chk_show_regions_running.setChecked(self._show_regions_enabled)
+            if hasattr(self, "chk_show_regions_template") and self.chk_show_regions_template.isChecked() != self._show_regions_enabled:
+                self.chk_show_regions_template.setChecked(self._show_regions_enabled)
+        finally:
+            self._syncing_show_regions = False
     
     def _on_clear_barcode_clicked(self):
         """Handle clear barcode results button"""
         self.txt_barcode_results.clear()
     
     # ========== Template Mode Event Handlers (for editing templates) ==========
+
+    def _on_template_combo_changed(self, template_name: str):
+        """Auto-load template in Template Mode when user changes selection."""
+        if self._suppress_template_autoload:
+            return
+        if not template_name or template_name == "-- No Template --":
+            # No template selected: hide extra panels
+            self._set_template_tab_mode("none")
+            return
+
+        # Template selected: show browse UI
+        self._set_template_tab_mode("browse")
+        if self._presenter:
+            self._presenter.on_load_template_clicked(template_name)
+
+    def _on_new_template_clicked(self):
+        """Start creating a new template (UI helper)."""
+        # Switch UI to create mode and clear template selection
+        self._set_template_tab_mode("create")
+        self._suppress_template_autoload = True
+        try:
+            if hasattr(self, "combo_template"):
+                self.combo_template.setCurrentText("-- No Template --")
+        finally:
+            self._suppress_template_autoload = False
+
+        if hasattr(self, "lbl_current_template_info"):
+            self.lbl_current_template_info.setText("Creating new template...")
+        if hasattr(self, "txt_template_name"):
+            self.txt_template_name.clear()
+        if hasattr(self, "txt_template_desc"):
+            self.txt_template_desc.clear()
+        if hasattr(self, "txt_template_regions_list"):
+            self.txt_template_regions_list.setPlainText("No regions defined")
+        self.status_bar.showMessage("New template: load master image, define regions, then Save")
+
+    def _on_region_table_selection_changed(self):
+        row = self.table_template_regions.currentRow() if hasattr(self, "table_template_regions") else -1
+        has_selection = row >= 0
+        if hasattr(self, "btn_region_edit"):
+            self.btn_region_edit.setEnabled(has_selection)
+        if hasattr(self, "btn_region_delete"):
+            self.btn_region_delete.setEnabled(has_selection)
+
+    def _on_region_add_clicked(self):
+        """Add region to current template via ROI selection."""
+        if not self._presenter:
+            return
+        template_name = self.combo_template.currentText() if hasattr(self, "combo_template") else "-- No Template --"
+        if template_name == "-- No Template --":
+            QMessageBox.warning(self, "Warning", "Please select a template")
+            return
+        self._roi_selection_mode = 'template_current_add'
+        self.image_display.start_roi_selection()
+        scan_text = "with barcode scan" if self.chk_region_scan_barcode.isChecked() else "crop only"
+        self.status_bar.showMessage(f"Add region ({scan_text}): Click and drag on image")
+
+    def _on_region_edit_clicked(self):
+        """Edit selected region (update ROI) via ROI selection."""
+        if not self._presenter:
+            return
+        row = self.table_template_regions.currentRow()
+        if row < 0:
+            QMessageBox.warning(self, "Warning", "Please select a region to edit")
+            return
+        self._pending_region_edit_row = row
+        self._roi_selection_mode = 'template_current_edit'
+        self.image_display.start_roi_selection()
+        self.status_bar.showMessage("Edit region: Click and drag new ROI on image")
+
+    def _on_region_delete_clicked(self):
+        """Delete selected region from current template."""
+        if not self._presenter:
+            return
+        row = self.table_template_regions.currentRow()
+        if row < 0:
+            QMessageBox.warning(self, "Warning", "Please select a region to delete")
+            return
+        name_item = self.table_template_regions.item(row, 0)
+        region_name = name_item.text() if name_item else ""
+        if QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Delete region '{region_name}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        self._presenter.on_current_template_region_deleted(row)
     
     def _on_select_template_clicked(self):
         """Handle select template region button"""
@@ -827,6 +1004,31 @@ class MainView(QMainWindow):
                     self._presenter.on_template_crop_region_added(region_name, x, y, width, height, scan_barcode)
             scan_text = "with barcode scan" if self.chk_scan_barcode.isChecked() else "crop only"
             self.status_bar.showMessage(f"Region added ({scan_text}): {width}x{height}")
+
+        elif self._roi_selection_mode == 'template_current_add':
+            if self._presenter:
+                from PySide6.QtWidgets import QInputDialog
+                default_name = f"Region_{self.table_template_regions.rowCount()}"
+                region_name, ok = QInputDialog.getText(
+                    self, "Region Name", "Enter region name:", text=default_name
+                )
+                if ok and region_name:
+                    scan_barcode = self.chk_region_scan_barcode.isChecked()
+                    self._presenter.on_current_template_region_added(
+                        region_name, x, y, width, height, scan_barcode
+                    )
+            scan_text = "with barcode scan" if self.chk_region_scan_barcode.isChecked() else "crop only"
+            self.status_bar.showMessage(f"Region added ({scan_text}): {width}x{height}")
+
+        elif self._roi_selection_mode == 'template_current_edit':
+            if self._presenter:
+                row = getattr(self, "_pending_region_edit_row", -1)
+                if row >= 0:
+                    scan_barcode = self.chk_region_scan_barcode.isChecked()
+                    self._presenter.on_current_template_region_updated(
+                        row, x, y, width, height, scan_barcode
+                    )
+            self.status_bar.showMessage(f"Region updated: {width}x{height}")
         
         # Reset mode
         self._roi_selection_mode = None
@@ -1144,12 +1346,20 @@ class MainView(QMainWindow):
     
     def update_template_list(self, templates: list):
         """Update template combo box (both running and template mode)"""
+        current_running = self.combo_running_template.currentText() if hasattr(self, 'combo_running_template') else None
+        current_template_mode = self.combo_template.currentText() if hasattr(self, 'combo_template') else None
+
+        self._suppress_template_autoload = True
         # Update running mode combo
         if hasattr(self, 'combo_running_template'):
+            self.combo_running_template.blockSignals(True)
             self.combo_running_template.clear()
             self.combo_running_template.addItem("-- No Template --")
             for template in templates:
                 self.combo_running_template.addItem(template)
+            if current_running and current_running in templates:
+                self.combo_running_template.setCurrentText(current_running)
+            self.combo_running_template.blockSignals(False)
             # Ensure combo is enabled (can select template even without camera)
             self.combo_running_template.setEnabled(True)
             # Ensure load button is enabled
@@ -1160,22 +1370,56 @@ class MainView(QMainWindow):
         
         # Update template mode combo (if exists)
         if hasattr(self, 'combo_template'):
+            self.combo_template.blockSignals(True)
             self.combo_template.clear()
             self.combo_template.addItem("-- No Template --")
             for template in templates:
                 self.combo_template.addItem(template)
+            if current_template_mode and current_template_mode in templates:
+                self.combo_template.setCurrentText(current_template_mode)
+            self.combo_template.blockSignals(False)
+
+        self._suppress_template_autoload = False
     
     def update_template_regions_list(self, regions_text: str):
         """Update template regions list display"""
         self.txt_template_regions_list.setPlainText(regions_text)
+
+    def update_template_regions_table(self, regions: list):
+        """Update region editor table for current template (Template Mode)."""
+        if not hasattr(self, "table_template_regions"):
+            return
+
+        self.table_template_regions.setRowCount(0)
+        if not regions:
+            # Template loaded but no regions yet: allow Add, disable Edit/Delete
+            self.btn_region_add.setEnabled(True)
+            self.btn_region_edit.setEnabled(False)
+            self.btn_region_delete.setEnabled(False)
+            return
+
+        self.table_template_regions.setRowCount(len(regions))
+        for row, r in enumerate(regions):
+            self.table_template_regions.setItem(row, 0, QTableWidgetItem(str(getattr(r, "name", ""))))
+            self.table_template_regions.setItem(row, 1, QTableWidgetItem(str(getattr(r, "x", 0))))
+            self.table_template_regions.setItem(row, 2, QTableWidgetItem(str(getattr(r, "y", 0))))
+            self.table_template_regions.setItem(row, 3, QTableWidgetItem(str(getattr(r, "width", 0))))
+            self.table_template_regions.setItem(row, 4, QTableWidgetItem(str(getattr(r, "height", 0))))
+            self.table_template_regions.setItem(
+                row, 5, QTableWidgetItem("Yes" if getattr(r, "scan_barcode", True) else "No")
+            )
+            self.table_template_regions.setItem(
+                row, 6, QTableWidgetItem("Yes" if getattr(r, "enabled", True) else "No")
+            )
+
+        self.btn_region_add.setEnabled(True)
+        self._on_region_table_selection_changed()
     
     def update_current_template_info(self, info: str):
         """Update current template info label (for both modes)"""
-        # Update running mode label
-        if hasattr(self, 'lbl_current_template'):
+        if hasattr(self, 'lbl_current_template') and self.lbl_current_template is not None:
             self.lbl_current_template.setText(info)
-        # Update template mode label
-        if hasattr(self, 'lbl_current_template_info'):
+        if hasattr(self, 'lbl_current_template_info') and self.lbl_current_template_info is not None:
             self.lbl_current_template_info.setText(info)
     
     def update_template_results(self, results_text: str):
@@ -1184,7 +1428,7 @@ class MainView(QMainWindow):
     
     def get_show_regions_enabled(self) -> bool:
         """Get show regions checkbox state"""
-        return self.chk_show_regions.isChecked()
+        return bool(getattr(self, "_show_regions_enabled", True))
     
     def update_barcode_results(self, results: dict):
         """Update barcode detection results display"""
@@ -1202,9 +1446,7 @@ class MainView(QMainWindow):
         
         self.txt_barcode_results.setPlainText(text.strip())
     
-    def update_current_template_info(self, template_info: str):
-        """Update current template info label"""
-        self.lbl_current_template.setText(template_info)
+    # NOTE: removed duplicate update_current_template_info (was overriding template-mode label updates)
     
     def update_template_region_info(self, info: str):
         """Update template region label"""
