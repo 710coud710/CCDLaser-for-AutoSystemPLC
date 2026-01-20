@@ -111,3 +111,8 @@ class IPresenter(ABC):
         """User thay đổi QR detection enable/disable"""
         pass
 
+    @abstractmethod
+    def on_manual_start_clicked(self):
+        """User click nút Manual Start (capture từ camera và xử lý với template)"""
+        pass
+

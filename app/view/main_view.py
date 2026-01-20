@@ -356,27 +356,6 @@ class MainView(QMainWindow):
         template_group.setLayout(template_layout)
         layout.addWidget(template_group)
         
-        # Test Image Source (for testing without camera)
-        test_group = QGroupBox("Test Image Source")
-        test_layout = QVBoxLayout()
-        
-        self.btn_load_test_image = QPushButton("Load Image for Testing")
-        self.btn_load_test_image.clicked.connect(self._on_load_test_image_clicked)
-        test_layout.addWidget(self.btn_load_test_image)
-        
-        self.lbl_test_image_source = QLabel("No test image loaded")
-        self.lbl_test_image_source.setStyleSheet("color: #888; font-size: 10px;")
-        self.lbl_test_image_source.setWordWrap(True)
-        test_layout.addWidget(self.lbl_test_image_source)
-        
-        self.btn_process_test_image = QPushButton("Process Test Image")
-        self.btn_process_test_image.clicked.connect(self._on_process_test_image_clicked)
-        self.btn_process_test_image.setEnabled(False)
-        test_layout.addWidget(self.btn_process_test_image)
-        
-        test_group.setLayout(test_layout)
-        layout.addWidget(test_group)
-        
         # Template info display
         info_group = QGroupBox("Current Template")
         info_layout = QVBoxLayout()
@@ -401,6 +380,11 @@ class MainView(QMainWindow):
         self.chk_show_regions = QCheckBox("Show Regions")
         self.chk_show_regions.setChecked(True)
         barcode_layout.addWidget(self.chk_show_regions)
+
+        # Manual Start button: capture frame from camera and process with template
+        self.btn_manual_start = QPushButton("Manual Start (Capture && Process)")
+        self.btn_manual_start.clicked.connect(self._on_manual_start_clicked)
+        barcode_layout.addWidget(self.btn_manual_start)
         
         barcode_group.setLayout(barcode_layout)
         layout.addWidget(barcode_group)
@@ -953,6 +937,12 @@ class MainView(QMainWindow):
         """Handle process test image button"""
         if self._presenter:
             self._presenter.on_process_test_image_clicked()
+
+    def _on_manual_start_clicked(self):
+        """Handle Manual Start button in Running Mode"""
+        if self._presenter:
+            # Gọi presenter để chụp frame từ camera và xử lý với template
+            self._presenter.on_manual_start_clicked()
     
     # ========== Template Mode Event Handlers ==========
     

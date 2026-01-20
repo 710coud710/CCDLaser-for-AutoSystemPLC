@@ -3,8 +3,11 @@ Main Presenter - Điều phối giữa View và Model
 Theo MVP: Presenter chứa logic, không biết chi tiết UI
 """
 import logging
+import os
 from typing import Optional, Dict, Any
+from datetime import datetime
 import numpy as np
+import cv2
 from PySide6.QtCore import QObject, QTimer
 from app.view.view_interface import IView, IPresenter
 from app.model import CameraConnectionService
@@ -74,6 +77,11 @@ class MainPresenter(QObject):
         self._stream_timer = QTimer()
         self._stream_timer.timeout.connect(self._on_stream_timer)
         self._stream_interval = 33  # ~30 FPS
+        
+        # ScreenCCD directory for saving captured images
+        self._screenccd_dir = self._get_screenccd_directory()
+        os.makedirs(self._screenccd_dir, exist_ok=True)
+        logger.info(f"ScreenCCD directory: {self._screenccd_dir}")
         
         logger.info("MainPresenter initialized")
     
@@ -281,6 +289,85 @@ class MainPresenter(QObject):
             logger.error(f"Failed to process test image: {e}", exc_info=True)
             self._view.show_message(f"Error: {str(e)}", "error")
             logger.error(f"Test image processing failed - image shape: {self._test_image.shape if self._test_image is not None else 'None'}, template: {current_template.name if current_template else 'None'}")
+
+    def on_manual_start_clicked(self):
+        """
+        User click Manual Start (Running Mode)
+        - Chụp 1 frame từ camera
+        - Xử lý với template hiện tại
+        - Hiển thị kết quả lên Barcode Results
+        """
+        logger.info("Manual Start (capture + process) clicked")
+
+        # Validate camera state
+        if not (self._state_machine.is_connected() or self._state_machine.is_streaming()):
+            self._view.show_message("Camera is not connected", "warning")
+            logger.warning("Manual start requested but camera is not connected")
+            return
+
+        # Validate template
+        current_template = self._template_service.get_current_template()
+        if current_template is None:
+            self._view.show_message("Please load a template first", "warning")
+            logger.warning("Manual start requested but no template is loaded")
+            return
+
+        try:
+            # Capture single frame from camera
+            frame = self._camera_service.get_frame(timeout_ms=1000)
+
+            if frame is None:
+                self._view.show_message("Failed to capture frame", "error")
+                logger.warning("Manual start: failed to get frame from camera")
+                return
+
+            # Save captured image to screenccd folder
+            saved_path = self._save_captured_image(frame)
+            if saved_path:
+                logger.info(f"Image saved to: {saved_path}")
+
+            display_frame = frame.copy()
+
+            # Process with template: crop regions + scan barcodes
+            results = self._template_service.process_image_with_template(
+                frame, current_template
+            )
+
+            if results["success"]:
+                # Draw template regions on image if enabled
+                if self._view.get_show_regions_enabled():
+                    display_frame = self._template_service.draw_template_regions(
+                        display_frame, current_template, draw_regions=True
+                    )
+
+                # Update barcode results
+                barcode_results = results.get("barcodes", {})
+                self._view.update_barcode_results(barcode_results)
+
+                # Display processed image
+                self._view.display_image(display_frame)
+                self._view.show_message(
+                    "Manual capture processed successfully", "success"
+                )
+
+                # Optional logging
+                log_text = ""
+                for region_name, barcode_list in barcode_results.items():
+                    if barcode_list:
+                        for barcode_data in barcode_list:
+                            log_text += f"[OK] {region_name}: {barcode_data}\n"
+                    else:
+                        log_text += f"[NG] {region_name}: No barcode found\n"
+                if log_text:
+                    logger.info(f"Manual barcode detection results:\n{log_text}")
+            else:
+                error_msg = results.get("error", "Unknown error")
+                self._view.show_message(f"Processing failed: {error_msg}", "error")
+                logger.error(f"Manual template processing failed: {error_msg}")
+
+        except Exception as e:
+            logger.error(f"Manual capture + process failed: {e}", exc_info=True)
+            self._view.show_message(f"Error: {str(e)}", "error")
     
     # ========== Template Mode Handlers ==========
     
@@ -451,6 +538,38 @@ class MainPresenter(QObject):
             self._view.show_message(f"Error processing template: {e}", "error")
     
     # ========== Private Methods ==========
+    
+    def _get_screenccd_directory(self) -> str:
+        """Get screenccd directory for saving captured images"""
+        # Use current working directory or create screenccd folder there
+        base_path = os.getcwd()
+        screenccd_dir = os.path.join(base_path, "screenccd")
+        return screenccd_dir
+    
+    def _save_captured_image(self, image: np.ndarray) -> Optional[str]:
+        """
+        Save captured image to screenccd folder with timestamp
+        
+        Args:
+            image: Image to save (numpy array)
+        
+        Returns:
+            File path if successful, None otherwise
+        """
+        try:
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]  # milliseconds
+            filename = f"ccd_{timestamp}.png"
+            filepath = os.path.join(self._screenccd_dir, filename)
+            
+            # Save image
+            cv2.imwrite(filepath, image)
+            logger.info(f"Captured image saved: {filepath}")
+            return filepath
+            
+        except Exception as e:
+            logger.error(f"Failed to save captured image: {e}", exc_info=True)
+            return None
     
     def _connect_camera(self):
         """Kết nối MindVision camera"""
@@ -643,9 +762,13 @@ class MainPresenter(QObject):
                 # Save as master image for teaching mode
                 self._teaching_master_image = frame.copy()
                 
+                # Save captured image to screenccd folder
+                saved_path = self._save_captured_image(frame)
+                if saved_path:
+                    logger.info(f"Image saved to: {saved_path}")
+                
                 self._view.display_image(frame)
                 self._view.show_message("Frame captured (saved as master image)", "success")
-                self._view.update_image_source_label("Captured from camera")
                 logger.info("Master image captured for teaching mode")
             else:
                 self._view.show_message("Failed to capture frame", "error")
