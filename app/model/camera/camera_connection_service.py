@@ -5,6 +5,7 @@ Quản lý kết nối và điều khiển MindVision camera
 import logging
 from typing import Optional, Dict, Any
 import numpy as np
+import cv2
 from .camera_base import CameraBase
 from .mindvision_camera import MindVisionCamera
 
@@ -116,7 +117,18 @@ class CameraConnectionService:
             return None
         
         try:
-            return self._camera.capture_frame(timeout_ms)
+            frame = self._camera.capture_frame(timeout_ms)
+            if frame is None:
+                return None
+
+            # Optional flip horizontally (mirror) once for camera frames
+            try:
+                if bool(getattr(self._camera, "config", {}).get("flip_horizontal", False)):
+                    frame = cv2.flip(frame, 1)
+            except Exception as flip_err:
+                logger.warning(f"Failed to flip frame: {flip_err}")
+
+            return frame
         except Exception as e:
             logger.error(f"Failed to get frame: {e}")
             return None

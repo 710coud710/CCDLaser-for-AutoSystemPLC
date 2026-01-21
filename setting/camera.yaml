@@ -25,6 +25,10 @@ camera:
   
   # Frame rate
   frame_rate: 30  # FPS 
+
+  # Image transform
+  # Flip image horizontally once (mirror) for both capture + streaming.
+  flip_horizontal: true
   
   # Timeout
   grab_timeout: 1000  # milliseconds

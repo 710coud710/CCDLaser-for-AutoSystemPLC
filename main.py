@@ -2,22 +2,17 @@ import sys
 import signal
 from PySide6.QtWidgets import QApplication
 
-# Import services
 from services.logService import getLogger
 from services.settingService import getSettingService
-# Import MVP components
 from app.view import MainView
 from app.presenter import MainPresenter
 
 
 def main():
-    """Main entry point"""
-    
-    # 1. Setup logging
+
     logger = getLogger()
-    logger.info("CCDLaser - Camera Control System Started")
+    logger.info("CCDLaser -🤞 Camera Control System Started")
     try:
-        # 2. Load configuration
         logger.info("Loading configuration...")
         try:
             settingService = getSettingService()
@@ -26,9 +21,6 @@ def main():
         except Exception as e:
             logger.error(f"Failed to load configuration: {e}", exc_info=True)
             raise
-        
-        # 3. Create Qt Application
-        logger.info("Creating Qt Application...")
         app = QApplication(sys.argv)
         app.setApplicationName("CCDLaser")
         app.setOrganizationName("CCDLaser")
