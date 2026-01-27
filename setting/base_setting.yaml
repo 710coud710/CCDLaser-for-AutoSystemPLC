@@ -1,8 +1,7 @@
-# Base Setting - Cấu hình chung của ứng dụng
 app:
   name: "CCDLaser"
   version: "1.0.0"
-  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  log_level: "INFO"
   log_to_file: true
 
 # Đường dẫn
@@ -15,4 +14,13 @@ ui:
   window_width: 1200
   window_height: 800
   theme: "dark"
+
+# Remote TCP Client
+tcp_server:
+  enabled: true
+  host: "172.20.10.2"  # Địa chỉ server để kết nối
+  port: 9000
+  check_timeout_ms: 1500
+  ok_if_any_barcode: true
+
 

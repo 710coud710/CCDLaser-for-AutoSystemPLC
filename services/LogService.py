@@ -116,7 +116,7 @@ class ThreadLogger:
                     logger.addHandler(console_handler)
                     logger.addHandler(file_handler)
                     # Log khởi động
-                    logger.info("--------------------------------- Starting Logger ---------------------------------")
+                    logger.info("--------------------------- Starting Logger ---------------------------")
                     logger.info(f"Logger initialized: {log_name}")
                     logger.info(f"Log file: {log_filename}")
        

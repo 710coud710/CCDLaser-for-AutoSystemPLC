@@ -16,9 +16,9 @@ from app.model.recipe import RecipeService, Recipe, TemplateRegion, QRROIRegion,
 from app.model.template import TemplateMatchingService, MatchResult
 from app.model.template_data import TemplateService, Template, CropRegion
 from .state_machine import StateMachine, AppState
-
-logger = logging.getLogger(__name__)
-
+from services.remoteTcpServer import RemoteTcpClient
+from services.logService import getLogger
+logger = getLogger(__name__)
 
 class MainPresenter(QObject):
     """
@@ -77,6 +77,13 @@ class MainPresenter(QObject):
         self._stream_timer = QTimer()
         self._stream_timer.timeout.connect(self._on_stream_timer)
         self._stream_interval = 33  # ~30 FPS
+
+        # Cache latest camera frame (for remote CHECK when streaming)
+        self._last_camera_frame = None
+
+        # Remote TCP client
+        self._remote_client = RemoteTcpClient()
+        self._remote_check_busy = False
         
         # ScreenCCD directory for saving captured images
         self._screenccd_dir = self._get_screenccd_directory()
@@ -102,6 +109,18 @@ class MainPresenter(QObject):
         settings = self._camera_settings_service.load_settings()
         if settings:
             logger.info("Loaded saved camera settings")
+
+        # Connect to remote TCP server if enabled
+        tcp_cfg = (self._settings.get("tcp_server", {}) or {})
+        if tcp_cfg.get("enabled", False):
+            host = tcp_cfg.get("host", "localhost")
+            port = int(tcp_cfg.get("port", 9000))
+            self._remote_client.messageReceived.connect(self._on_remote_message)
+            self._remote_client.connected.connect(lambda: self._view.show_message(f"Connected to TCP server at {host}:{port}", "info"))
+            self._remote_client.disconnected.connect(lambda: logger.warning("Disconnected from TCP server"))
+            ok = self._remote_client.connect_to_server(host, port)
+            if not ok:
+                self._view.show_message("Failed to connect to TCP server", "warning")
     
     def on_view_closing(self):
         """View sắp đóng - cleanup"""
@@ -116,6 +135,10 @@ class MainPresenter(QObject):
             self._disconnect_camera()
         
         # Cleanup
+        try:
+            self._remote_client.disconnect_from_server()
+        except Exception:
+            pass
         self._camera_service.cleanup()
         logger.info("Cleanup completed")
     
@@ -453,6 +476,9 @@ class MainPresenter(QObject):
                         log_text += f"[NG] {region_name}: No barcode found\n"
                 if log_text:
                     logger.info(f"Manual barcode detection results:\n{log_text}")
+                
+                # Gửi kết quả scan đến server
+                self._send_scan_result_to_server(barcode_results)
             else:
                 error_msg = results.get("error", "Unknown error")
                 self._view.show_message(f"Processing failed: {error_msg}", "error")
@@ -565,15 +591,18 @@ class MainPresenter(QObject):
         # Validate
         if self._template_test_image is None:
             self._view.show_message("Please load a test image first", "warning")
+            logger.warning("Template processing requested but no test image loaded")
             return
         
         current_template = self._template_service.get_current_template()
         if current_template is None:
             self._view.show_message("Please load a template first", "warning")
+            logger.warning("Template processing requested but no template loaded")
             return
         
         # Process image
         try:
+            logger.info("Starting template processing with test image")
             display_frame = self._template_test_image.copy()
             
             # Draw template regions on image
@@ -586,6 +615,7 @@ class MainPresenter(QObject):
                 )
             
             # Process with template
+            logger.info("Running process_image_with_template")
             results = self._template_service.process_image_with_template(
                 self._template_test_image, current_template
             )
@@ -600,7 +630,8 @@ class MainPresenter(QObject):
                     results_text += "=== Cropped Images ===\n"
                     for name, img in cropped_images.items():
                         h, w = img.shape[:2]
-                        results_text += f"✓ {name}: {w}x{h}\n"
+                        results_text += f"{name}: {w}x{h}\n"
+                        # logger.info(f"{name}: {w}x{h}")
                 
                 # Barcodes
                 barcodes = results.get('barcodes', {})
@@ -609,17 +640,25 @@ class MainPresenter(QObject):
                     for region_name, barcode_list in barcodes.items():
                         if barcode_list:
                             for barcode_data in barcode_list:
-                                results_text += f"✓ {region_name}: {barcode_data}\n"
+                                results_text += f"{region_name}: {barcode_data}\n"
+                                logger.info(f"{region_name}: {barcode_data}")
                         else:
-                            results_text += f"✗ {region_name}: No barcode detected\n"
+                            results_text += f"{region_name}: No barcode detected\n"
+                            logger.info(f"{region_name}: No barcode detected")
                 
                 if not results_text:
                     results_text = "No results"
-                
+
+                logger.info("Template processing succeeded")
                 self._view.update_template_results(results_text.strip())
                 self._view.show_message("Template processing completed", "success")
+                
+                # Gửi kết quả scan đến server
+                if barcodes:
+                    self._send_scan_result_to_server(barcodes)
             else:
                 error_msg = results.get('error', 'Unknown error')
+                logger.warning(f"Template processing returned error: {error_msg}")
                 self._view.update_template_results(f"Error: {error_msg}")
                 self._view.show_message(f"Processing failed: {error_msg}", "error")
             
@@ -817,6 +856,11 @@ class MainPresenter(QObject):
             frame = self._camera_service.get_frame(timeout_ms=100)
             
             if frame is not None:
+                # Cache latest camera frame (already flipped in camera service if enabled)
+                try:
+                    self._last_camera_frame = frame.copy()
+                except Exception:
+                    self._last_camera_frame = frame
                 display_frame = frame.copy()
                 
                 # Process based on mode - use template for barcode detection
@@ -861,6 +905,94 @@ class MainPresenter(QObject):
         except Exception as e:
             logger.error(f"Error in stream timer: {e}", exc_info=True)
             # Không stop streaming ngay, cho phép retry
+
+    def _on_remote_message(self, msg: str):
+        """Handle incoming messages from TCP server (if needed)."""
+        logger.debug(f"Received message from server: {msg}")
+        # Có thể xử lý các lệnh từ server ở đây nếu cần
+    
+    def _get_first_serial_number(self, barcode_results: dict) -> str:
+        """
+        Lấy mã serial number đầu tiên từ Region_1 (nếu có), 
+        nếu không có thì lấy từ region đầu tiên có barcode
+        
+        Args:
+            barcode_results: Dict với key là region_name, value là list barcode_data
+            
+        Returns:
+            Mã serial number đầu tiên, hoặc "" nếu không có
+        """
+        if not barcode_results:
+            return ""
+        
+        # Ưu tiên lấy từ Region_1
+        if "Region_1" in barcode_results:
+            region_1_barcodes = barcode_results["Region_1"]
+            if region_1_barcodes and len(region_1_barcodes) > 0:
+                return region_1_barcodes[0]
+        
+        # Nếu không có Region_1, lấy từ region đầu tiên có barcode
+        # Sắp xếp theo tên region để đảm bảo thứ tự
+        sorted_regions = sorted(barcode_results.items())
+        
+        for region_name, barcode_list in sorted_regions:
+            if barcode_list and len(barcode_list) > 0:
+                # Lấy mã đầu tiên từ region đầu tiên có barcode
+                return barcode_list[0]
+        
+        return ""
+    
+    def _check_all_regions_scanned(self, barcode_results: dict) -> bool:
+        """
+        Kiểm tra xem tất cả các region có scan được barcode không
+        
+        Args:
+            barcode_results: Dict với key là region_name, value là list barcode_data
+            
+        Returns:
+            True nếu tất cả region đều có barcode, False nếu có region nào không có
+        """
+        if not barcode_results:
+            return False
+        
+        for region_name, barcode_list in barcode_results.items():
+            if not barcode_list or len(barcode_list) == 0:
+                return False
+        
+        return True
+    
+    def _send_scan_result_to_server(self, barcode_results: dict):
+        """
+        Gửi kết quả scan đến server:
+        - Nếu scan được tất cả các vùng: gửi "OK,<mã_đầu_tiên>"
+        - Nếu không scan được: gửi "FAIL,<mã_đầu_tiên>"
+        
+        Args:
+            barcode_results: Dict với key là region_name, value là list barcode_data
+        """
+        if not self._remote_client.is_connected():
+            return
+        
+        # Lấy mã đầu tiên từ region đầu tiên
+        first_sn = self._get_first_serial_number(barcode_results)
+        
+        if not first_sn:
+            # Không có mã nào, gửi FAIL không có SN
+            self._remote_client.send_fail("")
+            logger.info("Sent FAIL to TCP server (no barcode found)")
+            return
+        
+        # Kiểm tra xem tất cả các region có scan được không
+        all_scanned = self._check_all_regions_scanned(barcode_results)
+        
+        if all_scanned:
+            # Tất cả đều scan được → gửi OK,SN
+            self._remote_client.send_ok(first_sn)
+            logger.info(f"Sent OK,{first_sn} to TCP server (all regions scanned)")
+        else:
+            # Có region không scan được → gửi FAIL,SN
+            self._remote_client.send_fail(first_sn)
+            logger.info(f"Sent FAIL,{first_sn} to TCP server (some regions not scanned)")
     
     def _capture_single_frame(self):
         """Chụp một frame đơn"""
@@ -881,6 +1013,11 @@ class MainPresenter(QObject):
                 self._view.display_image(frame)
                 self._view.show_message("Frame captured (saved as master image)", "success")
                 logger.info("Master image captured for teaching mode")
+                
+                # Gửi tín hiệu OK đến server sau khi CCD capture hoàn tất
+                if self._remote_client.is_connected():
+                    self._remote_client.send_ok()
+                    logger.info("Sent OK signal to TCP server after CCD capture")
             else:
                 self._view.show_message("Failed to capture frame", "error")
                 
