@@ -4,7 +4,7 @@ Theo MVP: Presenter chứa logic, không biết chi tiết UI
 """
 import logging
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from datetime import datetime
 import numpy as np
 import cv2
@@ -18,6 +18,7 @@ from app.model.template_data import TemplateService, Template, CropRegion
 from .state_machine import StateMachine, AppState
 from services.remoteTcpServer import RemoteTcpClient
 from services.logService import getLogger
+from app.model.camera.ccd_worker import CCDWorker
 logger = getLogger(__name__)
 
 class MainPresenter(QObject):
@@ -33,8 +34,11 @@ class MainPresenter(QObject):
         self._view = view
         self._settings = settings
         
-        # Model - Camera Service
+        # Model - Camera Service (CCD2 - hiện tại)
         self._camera_service = CameraConnectionService()
+
+        # CCD1 worker (QThread) - camera độc lập
+        self._ccd1_worker: Optional[CCDWorker] = None
         
         # QR Detection Service (deprecated, using template service now)
         qr_config = settings.get('qr', {})
@@ -125,6 +129,16 @@ class MainPresenter(QObject):
     def on_view_closing(self):
         """View sắp đóng - cleanup"""
         logger.info("View closing - cleaning up...")
+
+        # Dừng CCD1 worker nếu còn chạy
+        try:
+            if self._ccd1_worker is not None:
+                logger.info("Stopping CCD1 worker on view closing...")
+                self._ccd1_worker.stop()
+                self._ccd1_worker.wait(2000)
+                self._ccd1_worker = None
+        except Exception as e:
+            logger.error(f"Failed to stop CCD1 worker: {e}", exc_info=True)
         
         # Stop streaming nếu đang chạy
         if self._state_machine.is_streaming():
@@ -151,6 +165,64 @@ class MainPresenter(QObject):
             return
         
         self._connect_camera()
+
+    # ========== CCD1 Handlers (QThread, độc lập với CCD2) ==========
+
+    def on_ccd1_start_clicked(self):
+        """
+        Start CCD1 trong QThread riêng.
+        - Dùng cấu hình camera_ccd1 trong setting/camera.yaml
+        """
+        logger.info("CCD1 start requested")
+
+        if self._ccd1_worker is not None and self._ccd1_worker.isRunning():
+            self._view.show_message("CCD1 is already running", "info")
+            return
+
+        # Lấy config CCD1 (camera_ccd1). Nếu không có thì fallback ip="0"
+        ccd1_cfg = (self._settings.get("camera_ccd1", {}) or {})
+        camera_id = ccd1_cfg.get("ip", "0")
+
+        try:
+            self._ccd1_worker = CCDWorker(str(camera_id), ccd1_cfg)
+            self._ccd1_worker.frameCaptured.connect(self._on_ccd1_frame_captured)
+            self._ccd1_worker.start()
+
+            # Cập nhật UI cho CCD1 nếu view hỗ trợ
+            if hasattr(self._view, "update_ccd1_status"):
+                try:
+                    self._view.update_ccd1_status("streaming")
+                except Exception:
+                    pass
+
+            self._view.show_message(f"CCD1 started (camera_id={camera_id})", "success")
+            logger.info(f"CCD1 worker started with camera_id={camera_id}")
+        except Exception as e:
+            logger.error(f"Failed to start CCD1 worker: {e}", exc_info=True)
+            self._view.show_message(f"Failed to start CCD1: {e}", "error")
+            self._ccd1_worker = None
+
+    def on_ccd1_stop_clicked(self):
+        """Stop CCD1 QThread."""
+        logger.info("CCD1 stop requested")
+        if self._ccd1_worker is None:
+            return
+
+        try:
+            self._ccd1_worker.stop()
+            self._ccd1_worker.wait(2000)
+        except Exception as e:
+            logger.error(f"Error stopping CCD1 worker: {e}", exc_info=True)
+        finally:
+            self._ccd1_worker = None
+
+        if hasattr(self._view, "update_ccd1_status"):
+            try:
+                self._view.update_ccd1_status("stopped")
+            except Exception:
+                pass
+
+        self._view.show_message("CCD1 stopped", "info")
     
     def on_disconnect_clicked(self):
         """User click Disconnect"""
@@ -487,6 +559,31 @@ class MainPresenter(QObject):
         except Exception as e:
             logger.error(f"Manual capture + process failed: {e}", exc_info=True)
             self._view.show_message(f"Error: {str(e)}", "error")
+
+    # ========== CCD1 frame callback ==========
+
+    def _on_ccd1_frame_captured(self, frame: np.ndarray):
+        """
+        Nhận frame từ CCD1 (QThread) và xử lý:
+        - Dùng chung pipeline template/barcode như CCD2
+        - Hiển thị lên vùng image CCD1 trên UI
+        """
+        try:
+            display_frame, barcode_results = self._process_frame_with_template(frame)
+
+            # Hiển thị lên CCD1 view nếu UI có
+            if hasattr(self._view, "display_ccd1_image"):
+                try:
+                    self._view.display_ccd1_image(display_frame)
+                except Exception as e:
+                    logger.error(f"Failed to display CCD1 image: {e}", exc_info=True)
+
+            # Gửi kết quả scan đến server (nếu có barcode)
+            if barcode_results:
+                self._send_scan_result_to_server(barcode_results)
+
+        except Exception as e:
+            logger.error(f"Error handling CCD1 frame: {e}", exc_info=True)
     
     # ========== Template Mode Handlers ==========
     
@@ -861,43 +958,11 @@ class MainPresenter(QObject):
                     self._last_camera_frame = frame.copy()
                 except Exception:
                     self._last_camera_frame = frame
-                display_frame = frame.copy()
-                
-                # Process based on mode - use template for barcode detection
-                current_template = self._template_service.get_current_template()
-                
-                # Running mode with template loaded - process with template (same as template mode)
-                if self._barcode_enabled and current_template is not None:
-                    # Process image with template (crop regions + scan barcodes)
-                    # Dùng chung đường dẫn với template mode
-                    results = self._template_service.process_image_with_template(
-                        frame, current_template
-                    )
-                    
-                    if results['success']:
-                        # Draw template regions if enabled
-                        if self._view.get_show_regions_enabled():
-                            display_frame = self._template_service.draw_template_regions(
-                                display_frame, current_template, 
-                                draw_regions=True
-                            )
-                        
-                        # Get barcode results
-                        barcode_results = results.get('barcodes', {})
-                        
-                        # Update barcode results display
-                        self._view.update_barcode_results(barcode_results)
-                        
-                        # Log results (chỉ log khi có barcode mới để tránh spam)
-                        for region_name, barcode_list in barcode_results.items():
-                            if barcode_list:
-                                for barcode_data in barcode_list:
-                                    logger.debug(f"DataMatrix found in '{region_name}': {barcode_data}")
-                    else:
-                        error_msg = results.get('error', 'Unknown error')
-                        logger.warning(f"Template processing failed in streaming: {error_msg}")
-                
-                # Display frame
+
+                # Dùng chung pipeline xử lý template/barcode
+                display_frame, _ = self._process_frame_with_template(frame)
+
+                # Display frame cho CCD2 (camera hiện tại)
                 self._view.display_image(display_frame)
             else:
                 logger.warning("Failed to get frame")
@@ -905,6 +970,58 @@ class MainPresenter(QObject):
         except Exception as e:
             logger.error(f"Error in stream timer: {e}", exc_info=True)
             # Không stop streaming ngay, cho phép retry
+
+    # ========== Shared processing helper (CCD1 & CCD2) ==========
+
+    def _process_frame_with_template(self, frame: np.ndarray) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """
+        Xử lý frame với template:
+        - Crop regions + scan barcode
+        - Vẽ ROI nếu được bật
+        - Update barcode_results lên view
+
+        Returns:
+            (display_frame, barcode_results)
+        """
+        display_frame = frame.copy()
+        barcode_results: Dict[str, Any] = {}
+
+        try:
+            current_template = self._template_service.get_current_template()
+
+            if self._barcode_enabled and current_template is not None:
+                results = self._template_service.process_image_with_template(
+                    frame, current_template
+                )
+
+                if results.get("success"):
+                    # Draw template regions if enabled
+                    if self._view.get_show_regions_enabled():
+                        display_frame = self._template_service.draw_template_regions(
+                            display_frame, current_template, draw_regions=True
+                        )
+
+                    barcode_results = results.get("barcodes", {}) or {}
+
+                    # Update barcode results display
+                    self._view.update_barcode_results(barcode_results)
+
+                    # Log chi tiết (debug)
+                    for region_name, barcode_list in barcode_results.items():
+                        if barcode_list:
+                            for barcode_data in barcode_list:
+                                logger.debug(
+                                    f"DataMatrix found in '{region_name}': {barcode_data}"
+                                )
+                else:
+                    error_msg = results.get("error", "Unknown error")
+                    logger.warning(
+                        f"Template processing failed in streaming: {error_msg}"
+                    )
+        except Exception as e:
+            logger.error(f"Error in _process_frame_with_template: {e}", exc_info=True)
+
+        return display_frame, barcode_results
 
     def _on_remote_message(self, msg: str):
         """Handle incoming messages from TCP server (if needed)."""

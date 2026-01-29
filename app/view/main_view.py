@@ -82,21 +82,41 @@ class MainView(QMainWindow):
         logger.info("UI initialized")
     
     def _create_camera_panel(self) -> QWidget:
-        """Tạo panel hiển thị camera"""
-        group = QGroupBox("Camera View")
-        layout = QVBoxLayout()
-        
-        # Custom image display widget with ROI selection
+        """Tạo panel hiển thị camera cho 2 CCD (CCD2 + CCD1)"""
+        container = QWidget()
+        main_layout = QVBoxLayout()
+
+        # === CCD2 (camera hiện tại) ===
+        group_ccd2 = QGroupBox("CCD2 - Main Camera View")
+        layout_ccd2 = QVBoxLayout()
+
+        # Custom image display widget với ROI selection (dùng cho template, recipe,...)
         self.image_display = ImageDisplayWidget()
         self.image_display.roi_selected.connect(self._on_roi_selected)
-        layout.addWidget(self.image_display)
-        
+        layout_ccd2.addWidget(self.image_display)
 
-        self.info_label = QLabel("Camera: Not connected")
+        self.info_label = QLabel("CCD2: Not connected")
         self.info_label.setStyleSheet("color: #888; padding: 5px;")
-        layout.addWidget(self.info_label)
-        group.setLayout(layout)
-        return group
+        layout_ccd2.addWidget(self.info_label)
+        group_ccd2.setLayout(layout_ccd2)
+
+        # === CCD1 (camera thứ 1, chạy QThread độc lập) ===
+        group_ccd1 = QGroupBox("CCD1 - Secondary Camera View")
+        layout_ccd1 = QVBoxLayout()
+
+        self.image_display_ccd1 = ImageDisplayWidget()
+        # CCD1 chỉ hiển thị, không dùng ROI chọn vùng (không connect signal roi_selected)
+        layout_ccd1.addWidget(self.image_display_ccd1)
+
+        self.info_label_ccd1 = QLabel("CCD1: Not running")
+        self.info_label_ccd1.setStyleSheet("color: #888; padding: 5px;")
+        layout_ccd1.addWidget(self.info_label_ccd1)
+        group_ccd1.setLayout(layout_ccd1)
+
+        main_layout.addWidget(group_ccd2)
+        main_layout.addWidget(group_ccd1)
+        container.setLayout(main_layout)
+        return container
     
     def _create_control_panel_with_tabs(self) -> QWidget:
         widget = QWidget()
@@ -104,9 +124,13 @@ class MainView(QMainWindow):
         conn_group = self._create_connection_group()
         layout.addWidget(conn_group)
         
-        # Streaming group (chung cho cả 2 mode)
+        # Streaming group (CCD2 - camera chính)
         stream_group = self._create_streaming_group()
         layout.addWidget(stream_group)
+
+        # CCD1 control group (start/stop QThread độc lập)
+        ccd1_group = self._create_ccd1_group()
+        layout.addWidget(ccd1_group)
         
         # Tab widget cho Running/Template mode
         self.mode_tabs = QTabWidget()
@@ -195,6 +219,24 @@ class MainView(QMainWindow):
         
         stream_group.setLayout(stream_layout)
         return stream_group
+
+    def _create_ccd1_group(self) -> QGroupBox:
+        """Tạo group điều khiển CCD1 (QThread riêng, độc lập với CCD2)."""
+        group = QGroupBox("CCD1 Control")
+        layout = QHBoxLayout()
+
+        self.btn_ccd1_start = QPushButton("Start CCD1")
+        self.btn_ccd1_start.clicked.connect(self._on_ccd1_start_clicked)
+        layout.addWidget(self.btn_ccd1_start)
+
+        self.btn_ccd1_stop = QPushButton("Stop CCD1")
+        self.btn_ccd1_stop.clicked.connect(self._on_ccd1_stop_clicked)
+        self.btn_ccd1_stop.setEnabled(False)
+        layout.addWidget(self.btn_ccd1_stop)
+
+        layout.addStretch()
+        group.setLayout(layout)
+        return group
     
     
     def _create_template_mode_panel(self) -> QWidget:
@@ -741,6 +783,40 @@ class MainView(QMainWindow):
             
         except Exception as e:
             logger.error(f"Failed to display image: {e}")
+
+    def display_ccd1_image(self, image: np.ndarray):
+        """Hiển thị ảnh CCD1 lên panel CCD1."""
+        try:
+            # Convert BGR to RGB nếu cần
+            if len(image.shape) == 3 and image.shape[2] == 3:
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+            # Convert NumPy array to QImage
+            if len(image.shape) == 2:  # Grayscale
+                height, width = image.shape
+                bytes_per_line = width
+                q_image = QImage(
+                    image.data,
+                    width,
+                    height,
+                    bytes_per_line,
+                    QImage.Format_Grayscale8,
+                )
+            else:  # Color
+                height, width, channels = image.shape
+                bytes_per_line = channels * width
+                q_image = QImage(
+                    image.data,
+                    width,
+                    height,
+                    bytes_per_line,
+                    QImage.Format_RGB888,
+                )
+
+            pixmap = QPixmap.fromImage(q_image)
+            self.image_display_ccd1.set_image(pixmap)
+        except Exception as e:
+            logger.error(f"Failed to display CCD1 image: {e}")
     
     def enable_controls(self, enabled: bool):
         """Enable/disable controls"""
@@ -749,6 +825,9 @@ class MainView(QMainWindow):
         self.btn_start_stream.setEnabled(enabled)
         self.btn_stop_stream.setEnabled(enabled)
         self.btn_capture.setEnabled(enabled)
+
+        # CCD1 buttons: chỉ enable/disable start theo state cơ bản
+        self.btn_ccd1_start.setEnabled(enabled)
     
     def update_camera_info(self, info: dict):
         """Cập nhật thông tin camera"""
@@ -802,6 +881,21 @@ class MainView(QMainWindow):
         """Handle disconnect button"""
         if self._presenter:
             self._presenter.on_disconnect_clicked()
+
+    def _on_ccd1_start_clicked(self):
+        """Handle CCD1 start button"""
+        if self._presenter and hasattr(self._presenter, "on_ccd1_start_clicked"):
+            self._presenter.on_ccd1_start_clicked()
+            # Cập nhật nút
+            self.btn_ccd1_start.setEnabled(False)
+            self.btn_ccd1_stop.setEnabled(True)
+
+    def _on_ccd1_stop_clicked(self):
+        """Handle CCD1 stop button"""
+        if self._presenter and hasattr(self._presenter, "on_ccd1_stop_clicked"):
+            self._presenter.on_ccd1_stop_clicked()
+            self.btn_ccd1_start.setEnabled(True)
+            self.btn_ccd1_stop.setEnabled(False)
     
     def _on_start_stream_clicked(self):
         """Handle start stream button"""
