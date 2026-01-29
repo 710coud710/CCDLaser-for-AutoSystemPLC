@@ -11,9 +11,8 @@ from app.presenter import MainPresenter
 def main():
 
     logger = getLogger()
-    logger.info("CCDLaser -🤞 Camera Control System Started")
     try:
-        logger.info("Loading configuration...")
+        logger.info("CCDLaser - Camera Control System Started")
         try:
             settingService = getSettingService()
             settings = settingService.getSetting()
