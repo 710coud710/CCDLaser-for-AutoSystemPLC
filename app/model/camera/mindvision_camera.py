@@ -438,31 +438,47 @@ class MindVisionCamera(CameraBase):
             exposure_time = self.config.get('exposure_time', 30000)  # 30ms default
             gain = self.config.get('gain', 0)
             trigger_mode = self.config.get('trigger_mode', 'off')
-            pixel_format = self.config.get('pixel_format', 'auto').lower()  # auto, mono8, rgb8
-            
-            # Set output format based on pixel_format config
-            if pixel_format == 'mono8':
-                # Force MONO8 output
-                self.mvsdk.CameraSetIspOutFormat(self._handle, self.mvsdk.CAMERA_MEDIA_TYPE_MONO8)
-                self._mono_camera = True  # Override detection
-                logger.info("  Output format: MONO8 (forced by config)")
-            elif pixel_format == 'rgb8':
-                # Force RGB8 output
-                if self._mono_camera:
-                    # Convert mono to RGB
-                    logger.info("  Output format: RGB8 (mono sensor expanded to RGB)")
-                else:
-                    logger.info("  Output format: RGB8")
-                self._mono_camera = False  # Override detection
-            else:
-                # Auto mode - use sensor type
-                if self._mono_camera:
-                    # Mono camera → output MONO8 (không mở rộng thành RGB)
+
+            # --- Chế độ mono / màu ---
+            # Yêu cầu mới: chỉ dùng mono_mode (1 = MONO8, 0 = RGB8).
+            # Vẫn hỗ trợ backward-compatible nếu project cũ còn dùng pixel_format.
+            mono_mode_cfg = self.config.get('mono_mode', None)
+            if mono_mode_cfg is not None:
+                # Chuẩn hoá: mono_mode truthy → MONO, falsy → RGB
+                mono_mode = int(bool(mono_mode_cfg))
+                if mono_mode == 1:
+                    # Force MONO8 output
                     self.mvsdk.CameraSetIspOutFormat(self._handle, self.mvsdk.CAMERA_MEDIA_TYPE_MONO8)
-                    logger.info("  Output format: MONO8 (auto)")
+                    self._mono_camera = True
+                    logger.info("  Output format: MONO8 (from mono_mode=1)")
                 else:
-                    # Color camera → output RGB
-                    logger.info("  Output format: RGB8 (auto)")
+                    # Force RGB8 output (kể cả sensor mono cũng expand sang RGB)
+                    if self._mono_camera:
+                        logger.info("  Output format: RGB8 (mono sensor expanded to RGB, mono_mode=0)")
+                    else:
+                        logger.info("  Output format: RGB8 (from mono_mode=0)")
+                    self._mono_camera = False
+            else:
+                # Backward-compatible: dùng pixel_format nếu còn tồn tại
+                pixel_format = str(self.config.get('pixel_format', 'auto')).lower()  # auto, mono8, rgb8
+
+                if pixel_format == 'mono8':
+                    self.mvsdk.CameraSetIspOutFormat(self._handle, self.mvsdk.CAMERA_MEDIA_TYPE_MONO8)
+                    self._mono_camera = True
+                    logger.info("  Output format: MONO8 (from legacy pixel_format)")
+                elif pixel_format == 'rgb8':
+                    if self._mono_camera:
+                        logger.info("  Output format: RGB8 (mono sensor expanded to RGB, legacy pixel_format)")
+                    else:
+                        logger.info("  Output format: RGB8 (from legacy pixel_format)")
+                    self._mono_camera = False
+                else:
+                    # Auto mode - dùng loại sensor
+                    if self._mono_camera:
+                        self.mvsdk.CameraSetIspOutFormat(self._handle, self.mvsdk.CAMERA_MEDIA_TYPE_MONO8)
+                        logger.info("  Output format: MONO8 (auto by sensor type)")
+                    else:
+                        logger.info("  Output format: RGB8 (auto by sensor type)")
             
             trig_mode = 0 if trigger_mode.lower() == 'off' else 1
             self.mvsdk.CameraSetTriggerMode(self._handle, trig_mode)

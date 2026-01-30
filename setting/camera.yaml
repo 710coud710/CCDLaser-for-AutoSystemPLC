@@ -1,18 +1,37 @@
 # Camera Configuration - MindVision Camera
 
-# CCD2: giữ nguyên cấu hình hiện tại (camera đang dùng)
-camera:
-  # Camera ID:
-  #   - "cam0", "cam1", "cam2" → chọn camera theo index (0, 1, 2)
-  #   - "auto" → chọn camera đầu tiên
-  #   - "0", "1", "2" → index number trực tiếp
-  #   - "CB12345678" → chọn theo Serial Number
+# CCD1: cấu hình riêng cho camera thứ 1 (index 0)
+#   - Nếu cần đổi sang SN hoặc ID khác, chỉnh lại field ip bên dưới.
+
+camera_ccd1:
+  ip: "0"  # ← CCD1: Chọn camera thứ 1 (index 0)
+  
+  # Có thể reuse hầu hết tham số giống CCD2; chỉ khai báo những tham số khác biệt.
+  width: 1280
+  height: 1024
+  mono_mode: 1
+  exposure_auto: false
+  exposure_time: 10000
+  gain: 0
+  trigger_mode: "off"
+  trigger_source: "software"
+  frame_rate: 30
+  flip_horizontal: true
+  grab_timeout: 1000
+  auto_reconnect: true
+  reconnect_interval: 5000
+  max_reconnect_attempts: 3
+
+
+# CCD2: cấu hình riêng cho camera thứ 2 (index 1)
+# Đổi key từ `camera` → `camera_ccd2` để tách biệt với CCD1.
+camera_ccd2:
   ip: "1"  # ← CCD2: Chọn camera thứ 2 (index 1)
   
   # Camera parameters
   width: 1280
   height: 1024
-  pixel_format: "Mono8"  # Mono8, RGB8
+  mono_mode: 1
   
   # Exposure settings
   exposure_auto: false
@@ -38,27 +57,5 @@ camera:
   # Reconnect settings
   auto_reconnect: true
   reconnect_interval: 5000  # milliseconds
-  max_reconnect_attempts: 3
-
-
-# CCD1: cấu hình riêng cho camera thứ 1 (index 0)
-#   - Nếu cần đổi sang SN hoặc ID khác, chỉnh lại field ip bên dưới.
-camera_ccd1:
-  ip: "0"  # ← CCD1: Chọn camera thứ 1 (index 0)
-  
-  # Có thể reuse hầu hết tham số giống CCD2; chỉ khai báo những tham số khác biệt.
-  width: 1280
-  height: 1024
-  pixel_format: "Mono8"
-  exposure_auto: false
-  exposure_time: 10000
-  gain: 0
-  trigger_mode: "off"
-  trigger_source: "software"
-  frame_rate: 30
-  flip_horizontal: true
-  grab_timeout: 1000
-  auto_reconnect: true
-  reconnect_interval: 5000
   max_reconnect_attempts: 3
 

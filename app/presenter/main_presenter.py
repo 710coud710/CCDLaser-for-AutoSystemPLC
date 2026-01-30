@@ -811,7 +811,13 @@ class MainPresenter(QObject):
             self._view.show_message("Connecting to MindVision camera...", "info")
             
             # Lấy config từ YAML
-            camera_config = self._settings.get('camera', {})
+            # Ưu tiên key mới `camera_ccd2` (tách biệt với `camera_ccd1`).
+            # Nếu project cũ vẫn còn dùng key `camera`, sẽ fallback cho backwards-compat.
+            camera_config = (
+                self._settings.get('camera_ccd2')
+                or self._settings.get('camera')
+                or {}
+            )
             camera_id = camera_config.get('ip', 'cam2')  # Default: cam2
             
             logger.info(f"Connecting to MindVision camera: {camera_id}")
