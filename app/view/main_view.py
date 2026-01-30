@@ -817,6 +817,36 @@ class MainView(QMainWindow):
             self.image_display_ccd1.set_image(pixmap)
         except Exception as e:
             logger.error(f"Failed to display CCD1 image: {e}")
+
+    def update_ccd1_status(self, status: str):
+        """
+        Cập nhật trạng thái CCD1 và đồng bộ nút Start/Stop.
+        status:
+          - "streaming"
+          - "stopped"
+          - "idle"
+          - "error"
+        """
+        text_map = {
+            "streaming": ("CCD1: Streaming", "#00AA00"),
+            "stopped": ("CCD1: Stopped", "#888888"),
+            "idle": ("CCD1: Not running", "#888888"),
+            "error": ("CCD1: Error", "#FF0000"),
+        }
+        label_text, color = text_map.get(status, (f"CCD1: {status}", "#888888"))
+
+        # Cập nhật label
+        self.info_label_ccd1.setText(label_text)
+        self.info_label_ccd1.setStyleSheet(f"color: {color}; padding: 5px;")
+
+        # Cập nhật nút Start/Stop cho CCD1
+        if status == "streaming":
+            self.btn_ccd1_start.setEnabled(False)
+            self.btn_ccd1_stop.setEnabled(True)
+        else:
+            # Với các trạng thái khác, cho phép Start lại và tắt Stop
+            self.btn_ccd1_start.setEnabled(True)
+            self.btn_ccd1_stop.setEnabled(False)
     
     def enable_controls(self, enabled: bool):
         """Enable/disable controls"""
@@ -886,16 +916,11 @@ class MainView(QMainWindow):
         """Handle CCD1 start button"""
         if self._presenter and hasattr(self._presenter, "on_ccd1_start_clicked"):
             self._presenter.on_ccd1_start_clicked()
-            # Cập nhật nút
-            self.btn_ccd1_start.setEnabled(False)
-            self.btn_ccd1_stop.setEnabled(True)
 
     def _on_ccd1_stop_clicked(self):
         """Handle CCD1 stop button"""
         if self._presenter and hasattr(self._presenter, "on_ccd1_stop_clicked"):
             self._presenter.on_ccd1_stop_clicked()
-            self.btn_ccd1_start.setEnabled(True)
-            self.btn_ccd1_stop.setEnabled(False)
     
     def _on_start_stream_clicked(self):
         """Handle start stream button"""

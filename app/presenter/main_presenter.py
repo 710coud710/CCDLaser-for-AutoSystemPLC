@@ -164,7 +164,17 @@ class MainPresenter(QObject):
             self._view.show_message("Cannot connect in current state", "warning")
             return
         
+        # 1) Kết nối + start streaming cho CCD2 (camera chính)
         self._connect_camera()
+
+        # 2) Tự động start CCD1 trong QThread riêng (nếu cấu hình cho phép)
+        try:
+            logger.info("Auto-start CCD1 after main camera connect...")
+            self.on_ccd1_start_clicked()
+        except Exception as e:
+            # Không làm hỏng CCD2 nếu CCD1 lỗi; chỉ log + thông báo nhẹ
+            logger.error(f"Auto-start CCD1 failed: {e}", exc_info=True)
+            self._view.show_message(f"CCD1 auto-start failed: {e}", "warning")
 
     # ========== CCD1 Handlers (QThread, độc lập với CCD2) ==========
 
@@ -231,7 +241,15 @@ class MainPresenter(QObject):
         # Stop streaming trước nếu đang stream
         if self._state_machine.is_streaming():
             self._stop_streaming()
-        
+
+        # Stop CCD1 worker nếu đang chạy
+        try:
+            if self._ccd1_worker is not None and self._ccd1_worker.isRunning():
+                logger.info("Auto-stopping CCD1 worker on disconnect...")
+                self.on_ccd1_stop_clicked()
+        except Exception as e:
+            logger.error(f"Failed to auto-stop CCD1 on disconnect: {e}", exc_info=True)
+
         self._disconnect_camera()
     
     def on_start_stream_clicked(self):
