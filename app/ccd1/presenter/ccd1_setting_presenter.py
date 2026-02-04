@@ -47,7 +47,7 @@ class CCD1SettingPresenter(QObject):
     def _connect_signals(self):
         """Connect view signals to presenter handlers"""
         self._view.roi_selected.connect(self.on_roi_selected)
-        self._view.template_save_requested.connect(self.on_save_template)
+        self._view.template_capture_requested.connect(self.on_capture_template)
         self._view.template_load_requested.connect(self.on_load_template)
         self._view.threshold_changed.connect(self.on_threshold_changed)
         self._view.save_requested.connect(self.on_save_settings)
@@ -58,16 +58,16 @@ class CCD1SettingPresenter(QObject):
         self._current_roi = (x, y, width, height)
         logger.info(f"ROI selected: {self._current_roi}")
     
-    def on_save_template(self):
-        """Save current ROI as template"""
+    def on_capture_template(self):
+        """Capture current frame and use ROI as template (no file dialog)"""
         if self._current_roi is None:
             self._view.update_template_status("Error: No ROI selected")
-            logger.warning("Cannot save template: No ROI selected")
+            logger.warning("Cannot capture template: No ROI selected")
             return
         
         if self._last_frame is None:
             self._view.update_template_status("Error: No frame available")
-            logger.warning("Cannot save template: No frame available")
+            logger.warning("Cannot capture template: No frame available")
             return
         
         try:
@@ -75,18 +75,19 @@ class CCD1SettingPresenter(QObject):
             x, y, w, h = self._current_roi
             roi = self._last_frame[y:y+h, x:x+w]
             
-            # Save template
+            # Use ROI directly as template (no save to file)
+            self._template_image = roi.copy()
+            
+            # Optionally save to file for persistence
             template_path = os.path.join(self._template_dir, "template.png")
             cv2.imwrite(template_path, roi)
-            
-            self._template_image = roi.copy()
             self._template_path = template_path
             
-            self._view.update_template_status(f"Template saved: {w}x{h}")
-            logger.info(f"Template saved to {template_path}")
+            self._view.update_template_status(f"Template captured: {w}x{h}")
+            logger.info(f"Template captured from stream and saved to {template_path}")
         except Exception as e:
             self._view.update_template_status(f"Error: {str(e)}")
-            logger.error(f"Failed to save template: {e}", exc_info=True)
+            logger.error(f"Failed to capture template: {e}", exc_info=True)
     
     def on_load_template(self):
         """Load template from file"""

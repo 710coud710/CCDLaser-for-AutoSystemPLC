@@ -31,6 +31,7 @@ class CCD2SettingPresenter(QObject):
         self._current_template = None
         self._current_roi: Optional[tuple] = None
         self._last_frame: Optional[np.ndarray] = None
+        self._master_image: Optional[np.ndarray] = None  # For new template creation
         
         # Connect signals
         self._connect_signals()
@@ -48,6 +49,8 @@ class CCD2SettingPresenter(QObject):
         self._view.region_edit_requested.connect(self.on_region_edit)
         self._view.region_delete_requested.connect(self.on_region_delete)
         self._view.process_test_requested.connect(self.on_process_test)
+        self._view.capture_master_requested.connect(self.on_capture_master)
+        self._view.save_new_template_requested.connect(self.on_save_new_template)
         self._view.save_requested.connect(self.on_save_settings)
         self._view.cancel_requested.connect(self.on_cancel)
     
@@ -261,6 +264,91 @@ class CCD2SettingPresenter(QObject):
         except Exception as e:
             self._view.update_results(f"Error: {str(e)}")
             logger.error(f"Failed to process test: {e}", exc_info=True)
+    
+    def on_capture_master(self):
+        """Capture current frame as master image for new template"""
+        if self._last_frame is None:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self._view,
+                "No Frame",
+                "No frame available to capture"
+            )
+            return
+        
+        try:
+            # Capture current frame as master image
+            self._master_image = self._last_frame.copy()
+            
+            h, w = self._master_image.shape[:2]
+            self._view.update_master_status(f"Master image captured: {w}x{h}", enable_save=True)
+            logger.info(f"Master image captured: {w}x{h}")
+        except Exception as e:
+            self._view.update_master_status(f"Error: {str(e)}", enable_save=False)
+            logger.error(f"Failed to capture master image: {e}", exc_info=True)
+    
+    def on_save_new_template(self, name: str, description: str):
+        """Save new template with captured master image and regions"""
+        if self._master_image is None:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self._view,
+                "No Master Image",
+                "Please capture a master image first"
+            )
+            return
+        
+        try:
+            from app.model.template_data import Template
+            
+            # Create new template
+            h, w = self._master_image.shape[:2]
+            new_template = Template(
+                name=name,
+                description=description,
+                crop_regions=[],  # Start with empty regions, user can add later
+                master_image_width=w,
+                master_image_height=h
+            )
+            
+            # Save template
+            if self._template_service.save_template(new_template):
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.information(
+                    self._view,
+                    "Success",
+                    f"Template '{name}' created successfully!\nYou can now add regions to it."
+                )
+                
+                # Reload templates list
+                self._load_templates()
+                
+                # Select the new template
+                self._current_template = new_template
+                self._view.update_template_info(f"Template: {name}\n{description}\nRegions: 0")
+                self._view.update_regions_table([])
+                
+                # Clear master image and form
+                self._master_image = None
+                self._view.update_master_status("No master image captured", enable_save=False)
+                
+                logger.info(f"New template '{name}' created successfully")
+            else:
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.critical(
+                    self._view,
+                    "Error",
+                    f"Failed to save template '{name}'"
+                )
+                logger.error(f"Failed to save new template '{name}'")
+        except Exception as e:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                self._view,
+                "Error",
+                f"Failed to create template: {str(e)}"
+            )
+            logger.error(f"Failed to create new template: {e}", exc_info=True)
     
     def on_save_settings(self):
         """Save settings and close"""

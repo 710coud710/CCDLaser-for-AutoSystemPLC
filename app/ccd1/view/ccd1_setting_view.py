@@ -39,7 +39,7 @@ class CCD1SettingView(QMainWindow):
     cancel_requested = Signal()
     roi_selected = Signal(int, int, int, int)  # x, y, width, height
     template_load_requested = Signal()
-    template_save_requested = Signal()
+    template_capture_requested = Signal()  # Capture from stream
     threshold_changed = Signal(float)
     
     def __init__(self, parent=None):
@@ -119,16 +119,23 @@ class CCD1SettingView(QMainWindow):
         template_group = QGroupBox("Template Management")
         template_layout = QVBoxLayout()
         
-        template_layout.addWidget(QLabel("2. Save current ROI as template:"))
-        self.btn_save_template = QPushButton("Save Template from ROI")
-        self.btn_save_template.clicked.connect(self._on_save_template_clicked)
-        self.btn_save_template.setEnabled(False)
-        template_layout.addWidget(self.btn_save_template)
+        template_layout.addWidget(QLabel("2. Create template from:"))
         
-        template_layout.addWidget(QLabel("3. Load template for matching:"))
-        self.btn_load_template = QPushButton("Load Template")
+        # Option 1: Capture from stream
+        capture_layout = QHBoxLayout()
+        self.btn_capture_template = QPushButton("Capture from Stream")
+        self.btn_capture_template.clicked.connect(self._on_capture_template_clicked)
+        self.btn_capture_template.setToolTip("Capture current frame and use ROI as template")
+        capture_layout.addWidget(self.btn_capture_template)
+        template_layout.addLayout(capture_layout)
+        
+        # Option 2: Load from file
+        load_layout = QHBoxLayout()
+        self.btn_load_template = QPushButton("Load from File")
         self.btn_load_template.clicked.connect(self._on_load_template_clicked)
-        template_layout.addWidget(self.btn_load_template)
+        self.btn_load_template.setToolTip("Load template image from file")
+        load_layout.addWidget(self.btn_load_template)
+        template_layout.addLayout(load_layout)
         
         self.lbl_template_status = QLabel("No template loaded")
         self.lbl_template_status.setStyleSheet("color: #888; font-size: 10px;")
@@ -194,13 +201,12 @@ class CCD1SettingView(QMainWindow):
         """Handle ROI selection"""
         self.lbl_roi_info.setText(f"({x}, {y}, {width}x{height})")
         self.lbl_roi_info.setStyleSheet("color: #00AA00;")
-        self.btn_save_template.setEnabled(True)
         self.roi_selected.emit(x, y, width, height)
         logger.info(f"ROI selected: ({x}, {y}, {width}x{height})")
     
-    def _on_save_template_clicked(self):
-        """Handle save template button"""
-        self.template_save_requested.emit()
+    def _on_capture_template_clicked(self):
+        """Handle capture template from stream button"""
+        self.template_capture_requested.emit()
     
     def _on_load_template_clicked(self):
         """Handle load template button"""

@@ -45,6 +45,8 @@ class CCD2SettingView(QMainWindow):
     region_edit_requested = Signal(int)  # region index
     region_delete_requested = Signal(int)  # region index
     process_test_requested = Signal()
+    capture_master_requested = Signal()  # Capture master image from stream
+    save_new_template_requested = Signal(str, str)  # name, description
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -156,6 +158,39 @@ class CCD2SettingView(QMainWindow):
         region_group.setLayout(region_layout)
         layout.addWidget(region_group)
         
+        # === Template Creation (NEW) ===
+        creation_group = QGroupBox("Create New Template")
+        creation_layout = QVBoxLayout()
+        
+        # Template name and description
+        creation_layout.addWidget(QLabel("Template Name:"))
+        self.txt_new_template_name = QLineEdit()
+        self.txt_new_template_name.setPlaceholderText("Enter template name...")
+        creation_layout.addWidget(self.txt_new_template_name)
+        
+        creation_layout.addWidget(QLabel("Description:"))
+        self.txt_new_template_desc = QLineEdit()
+        self.txt_new_template_desc.setPlaceholderText("Enter description...")
+        creation_layout.addWidget(self.txt_new_template_desc)
+        
+        # Capture master image button
+        self.btn_capture_master = QPushButton("Capture Master Image from Stream")
+        self.btn_capture_master.clicked.connect(self._on_capture_master_clicked)
+        creation_layout.addWidget(self.btn_capture_master)
+        
+        self.lbl_master_status = QLabel("No master image captured")
+        self.lbl_master_status.setStyleSheet("color: #888; font-size: 10px;")
+        creation_layout.addWidget(self.lbl_master_status)
+        
+        # Save new template button
+        self.btn_save_new_template = QPushButton("Save New Template")
+        self.btn_save_new_template.clicked.connect(self._on_save_new_template_clicked)
+        self.btn_save_new_template.setEnabled(False)
+        creation_layout.addWidget(self.btn_save_new_template)
+        
+        creation_group.setLayout(creation_layout)
+        layout.addWidget(creation_group)
+        
         # === Test Processing ===
         test_group = QGroupBox("Test Processing")
         test_layout = QVBoxLayout()
@@ -227,6 +262,22 @@ class CCD2SettingView(QMainWindow):
     def _on_process_test_clicked(self):
         """Handle process test button"""
         self.process_test_requested.emit()
+    
+    def _on_capture_master_clicked(self):
+        """Handle capture master image button"""
+        self.capture_master_requested.emit()
+    
+    def _on_save_new_template_clicked(self):
+        """Handle save new template button"""
+        name = self.txt_new_template_name.text().strip()
+        desc = self.txt_new_template_desc.text().strip()
+        
+        if not name:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Invalid Input", "Please enter a template name")
+            return
+        
+        self.save_new_template_requested.emit(name, desc)
     
     def _on_save_clicked(self):
         """Handle save button"""
@@ -302,3 +353,14 @@ class CCD2SettingView(QMainWindow):
     def update_results(self, results: str):
         """Cập nhật kết quả test"""
         self.txt_results.setText(results)
+    
+    def update_master_status(self, status: str, enable_save: bool = False):
+        """Cập nhật trạng thái master image"""
+        self.lbl_master_status.setText(status)
+        if "captured" in status.lower():
+            self.lbl_master_status.setStyleSheet("color: #00AA00; font-size: 10px;")
+        else:
+            self.lbl_master_status.setStyleSheet("color: #888; font-size: 10px;")
+        
+        self.btn_save_new_template.setEnabled(enable_save)
+
