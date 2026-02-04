@@ -238,6 +238,14 @@ class MainView(QMainWindow):
         self.btn_ccd1_stop.setEnabled(False)
         layout.addWidget(self.btn_ccd1_stop)
 
+        self.btn_ccd1_setting = QPushButton("Setting CCD1")
+        self.btn_ccd1_setting.clicked.connect(self._on_ccd1_setting_clicked)
+        layout.addWidget(self.btn_ccd1_setting)
+
+        self.btn_ccd2_setting = QPushButton("Setting CCD2")
+        self.btn_ccd2_setting.clicked.connect(self._on_ccd2_setting_clicked)
+        layout.addWidget(self.btn_ccd2_setting)
+
         layout.addStretch()
         group.setLayout(layout)
         return group
@@ -954,6 +962,16 @@ class MainView(QMainWindow):
         """Handle CCD1 stop button"""
         if self._presenter and hasattr(self._presenter, "on_ccd1_stop_clicked"):
             self._presenter.on_ccd1_stop_clicked()
+
+    def _on_ccd1_setting_clicked(self):
+        """Handle CCD1 setting button"""
+        if self._presenter and hasattr(self._presenter, "on_ccd1_setting_clicked"):
+            self._presenter.on_ccd1_setting_clicked()
+
+    def _on_ccd2_setting_clicked(self):
+        """Handle CCD2 setting button"""
+        if self._presenter and hasattr(self._presenter, "on_ccd2_setting_clicked"):
+            self._presenter.on_ccd2_setting_clicked()
     
     def _on_start_stream_clicked(self):
         """Handle start stream button"""

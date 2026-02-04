@@ -4,6 +4,9 @@ Chứa model, view, presenter riêng cho camera CCD2
 """
 from .model.ccd2_camera_service import CCD2CameraService
 from .view.ccd2_view import CCD2View
+from .view.ccd2_setting_view import CCD2SettingView
 from .presenter.ccd2_presenter import CCD2Presenter
+from .presenter.ccd2_setting_presenter import CCD2SettingPresenter
 
-__all__ = ['CCD2CameraService', 'CCD2View', 'CCD2Presenter']
+__all__ = ['CCD2CameraService', 'CCD2View', 'CCD2SettingView', 'CCD2Presenter', 'CCD2SettingPresenter']
+

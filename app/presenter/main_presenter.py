@@ -233,6 +233,101 @@ class MainPresenter(QObject):
                 pass
 
         self._view.show_message("CCD1 stopped", "info")
+
+    def on_ccd1_setting_clicked(self):
+        """
+        Mở giao diện setting riêng cho CCD1
+        - Hiển thị camera CCD1 toàn màn hình
+        - Tạo ROI và so sánh với template
+        """
+        logger.info("CCD1 setting button clicked")
+        
+        try:
+            from app.ccd1.view.ccd1_setting_view import CCD1SettingView
+            from app.ccd1.presenter.ccd1_setting_presenter import CCD1SettingPresenter
+            from PySide6.QtCore import QTimer
+            
+            # Tạo view và presenter cho CCD1 setting
+            ccd1_setting_view = CCD1SettingView(parent=self._view)
+            
+            # Lấy camera service cho CCD1 (có thể dùng worker hoặc service riêng)
+            # Ở đây ta sẽ dùng CCD1 worker để lấy frame
+            ccd1_setting_presenter = CCD1SettingPresenter(
+                ccd1_setting_view,
+                None,  # Camera service (sẽ dùng worker)
+                template_dir="templates/ccd1"
+            )
+            
+            # Tạo timer để update frame từ CCD1 worker
+            if self._ccd1_worker is not None and self._ccd1_worker.isRunning():
+                update_timer = QTimer()
+                
+                def update_frame_from_worker():
+                    # Lấy frame từ worker và update vào setting view
+                    # Note: Cần implement cơ chế lấy frame từ worker
+                    pass
+                
+                update_timer.timeout.connect(update_frame_from_worker)
+                update_timer.start(33)  # ~30 FPS
+                
+                # Store timer để không bị garbage collected
+                ccd1_setting_view._update_timer = update_timer
+            
+            # Hiển thị setting view
+            ccd1_setting_view.show()
+            logger.info("CCD1 setting view opened")
+            
+        except Exception as e:
+            logger.error(f"Failed to open CCD1 setting: {e}", exc_info=True)
+            self._view.show_message(f"Failed to open CCD1 setting: {e}", "error")
+
+    def on_ccd2_setting_clicked(self):
+        """
+        Mở giao diện setting riêng cho CCD2
+        - Hiển thị camera CCD2 toàn màn hình
+        - Template check mã datamatrix
+        """
+        logger.info("CCD2 setting button clicked")
+        
+        try:
+            from app.ccd2.view.ccd2_setting_view import CCD2SettingView
+            from app.ccd2.presenter.ccd2_setting_presenter import CCD2SettingPresenter
+            from PySide6.QtCore import QTimer
+            
+            # Tạo view và presenter cho CCD2 setting
+            ccd2_setting_view = CCD2SettingView(parent=self._view)
+            ccd2_setting_presenter = CCD2SettingPresenter(
+                ccd2_setting_view,
+                self._camera_service,
+                self._template_service
+            )
+            
+            # Tạo timer để update frame từ camera service
+            if self._state_machine.is_connected():
+                update_timer = QTimer()
+                
+                def update_frame_from_camera():
+                    try:
+                        frame = self._camera_service.get_frame(timeout_ms=100)
+                        if frame is not None:
+                            ccd2_setting_presenter.update_frame(frame)
+                    except Exception as e:
+                        logger.error(f"Failed to get frame for CCD2 setting: {e}")
+                
+                update_timer.timeout.connect(update_frame_from_camera)
+                update_timer.start(33)  # ~30 FPS
+                
+                # Store timer để không bị garbage collected
+                ccd2_setting_view._update_timer = update_timer
+            
+            # Hiển thị setting view
+            ccd2_setting_view.show()
+            logger.info("CCD2 setting view opened")
+            
+        except Exception as e:
+            logger.error(f"Failed to open CCD2 setting: {e}", exc_info=True)
+            self._view.show_message(f"Failed to open CCD2 setting: {e}", "error")
+    
     
     def on_disconnect_clicked(self):
         """User click Disconnect"""
