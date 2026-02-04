@@ -95,6 +95,8 @@ class MainView(QMainWindow):
         self.image_display.roi_selected.connect(self._on_roi_selected)
         layout_ccd2.addWidget(self.image_display)
 
+        # Status label CCD2 - dùng chung 3 trạng thái:
+        # "Not connected" / "Not running" / "Streaming"
         self.info_label = QLabel("CCD2: Not connected")
         self.info_label.setStyleSheet("color: #888; padding: 5px;")
         layout_ccd2.addWidget(self.info_label)
@@ -108,7 +110,9 @@ class MainView(QMainWindow):
         # CCD1 chỉ hiển thị, không dùng ROI chọn vùng (không connect signal roi_selected)
         layout_ccd1.addWidget(self.image_display_ccd1)
 
-        self.info_label_ccd1 = QLabel("CCD1: Not running")
+        # Status label CCD1 - dùng chung 3 trạng thái:
+        # "Not connected" / "Not running" / "Streaming"
+        self.info_label_ccd1 = QLabel("CCD1: Not connected")
         self.info_label_ccd1.setStyleSheet("color: #888; padding: 5px;")
         layout_ccd1.addWidget(self.info_label_ccd1)
         group_ccd1.setLayout(layout_ccd1)
@@ -687,7 +691,19 @@ class MainView(QMainWindow):
         """Cập nhật trạng thái"""
         logger.info(f"Status: {status}")
         self.status_bar.showMessage(f"Status: {status}")
-        
+
+        # ==== Đồng bộ status label CCD2 với 3 trạng thái chung ====
+        if hasattr(self, "info_label"):
+            if status in ("streaming", "capturing", "running", "teaching"):
+                self.info_label.setText("CCD2: Streaming")
+                self.info_label.setStyleSheet("color: #00AA00; padding: 5px;")
+            elif status in ("connected",):
+                self.info_label.setText("CCD2: Not running")
+                self.info_label.setStyleSheet("color: #CCCC00; padding: 5px;")
+            else:  # idle, disconnected, error, ...
+                self.info_label.setText("CCD2: Not connected")
+                self.info_label.setStyleSheet("color: #888888; padding: 5px;")
+
         # Update button states based on status
         if status == "connected":
             # Connection: Ẩn Connect, hiện Disconnect
@@ -821,26 +837,43 @@ class MainView(QMainWindow):
     def update_ccd1_status(self, status: str):
         """
         Cập nhật trạng thái CCD1 và đồng bộ nút Start/Stop.
-        status:
+        Các trạng thái hiển thị sẽ thống nhất với CCD2:
+          - "Not connected"
+          - "Not running"
+          - "Streaming"
+
+        status (input) có thể là:
           - "streaming"
           - "stopped"
           - "idle"
           - "error"
+          - "not_connected"
+          - "not_running"
         """
-        text_map = {
-            "streaming": ("CCD1: Streaming", "#00AA00"),
-            "stopped": ("CCD1: Stopped", "#888888"),
-            "idle": ("CCD1: Not running", "#888888"),
-            "error": ("CCD1: Error", "#FF0000"),
-        }
-        label_text, color = text_map.get(status, (f"CCD1: {status}", "#888888"))
+        # Chuẩn hoá trạng thái logic
+        if status in ("streaming",):
+            logical = "streaming"
+        elif status in ("stopped", "not_running", "connected"):
+            logical = "not_running"
+        else:  # "idle", "error", "not_connected", ...
+            logical = "not_connected"
+
+        if logical == "streaming":
+            label_text = "CCD1: Streaming"
+            color = "#00AA00"
+        elif logical == "not_running":
+            label_text = "CCD1: Not running"
+            color = "#CCCC00"
+        else:  # not_connected
+            label_text = "CCD1: Not connected"
+            color = "#888888"
 
         # Cập nhật label
         self.info_label_ccd1.setText(label_text)
         self.info_label_ccd1.setStyleSheet(f"color: {color}; padding: 5px;")
 
         # Cập nhật nút Start/Stop cho CCD1
-        if status == "streaming":
+        if logical == "streaming":
             self.btn_ccd1_start.setEnabled(False)
             self.btn_ccd1_stop.setEnabled(True)
         else:

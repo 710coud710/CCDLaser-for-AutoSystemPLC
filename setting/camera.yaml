@@ -4,7 +4,7 @@
 #   - Nếu cần đổi sang SN hoặc ID khác, chỉnh lại field ip bên dưới.
 
 camera_ccd1:
-  ip: "0"  # ← CCD1: Chọn camera thứ 1 (index 0)
+  ip: "1"  # ← CCD1: Chọn camera thứ 1 (index 0)
   
   # Có thể reuse hầu hết tham số giống CCD2; chỉ khai báo những tham số khác biệt.
   width: 1280
@@ -26,7 +26,7 @@ camera_ccd1:
 # CCD2: cấu hình riêng cho camera thứ 2 (index 1)
 # Đổi key từ `camera` → `camera_ccd2` để tách biệt với CCD1.
 camera_ccd2:
-  ip: "1"  # ← CCD2: Chọn camera thứ 2 (index 1)
+  ip: "0"  # ← CCD2: Chọn camera thứ 2 (index 1)
   
   # Camera parameters
   width: 1280
