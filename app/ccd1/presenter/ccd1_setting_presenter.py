@@ -23,10 +23,11 @@ class CCD1SettingPresenter(QObject):
     - Lưu/load template
     """
     
-    def __init__(self, view, camera_service, template_dir: str = "templates/ccd1"):
+    def __init__(self, view, camera_service, template_service, template_dir: str = "templates/ccd1"):
         super().__init__()
         self._view = view
         self._camera_service = camera_service
+        self._template_service = template_service
         self._template_dir = template_dir
         
         # State
@@ -56,6 +57,7 @@ class CCD1SettingPresenter(QObject):
         self._view.roi_selected.connect(self.on_roi_selected)
         self._view.template_capture_requested.connect(self.on_capture_template)
         self._view.template_load_requested.connect(self.on_load_template)
+        self._view.save_template_requested.connect(self.on_save_template)
         self._view.threshold_changed.connect(self.on_threshold_changed)
         self._view.exposure_changed.connect(self.on_exposure_changed)
         self._view.gain_changed.connect(self.on_gain_changed)
@@ -147,6 +149,47 @@ class CCD1SettingPresenter(QObject):
             self._view.update_template_status(f"Error: {str(e)}")
             logger.error(f"Failed to load template: {e}", exc_info=True)
     
+    def on_save_template(self, title: str):
+        """Save current template logic using TemplateService"""
+        if self._template_image is None or self._current_roi is None:
+            self._view.update_template_status("Error: No template or ROI")
+            return
+            
+        try:
+            from app.model.template_data import Template, CCD1Config
+            
+            # Save template image to a file linked to the template
+            # In a real app, you might save it inside the template JSON as base64 or a reference
+            image_filename = f"{title}_ccd1.png"
+            image_path = os.path.join(self._template_dir, image_filename)
+            cv2.imwrite(image_path, self._template_image)
+            
+            # Create/Update Template object
+            x, y, w, h = self._current_roi
+            new_template = Template(
+                name=title,
+                description="", # No description as per user request
+                ccd1_config=CCD1Config(
+                    enabled=True,
+                    roi_x=x,
+                    roi_y=y,
+                    roi_width=w,
+                    roi_height=h,
+                    match_threshold=self._threshold,
+                    template_image_path=image_path
+                )
+            )
+            
+            if self._template_service.save_template(new_template):
+                self._view.update_template_status(f"Template '{title}' saved!")
+                logger.info(f"Template '{title}' saved successfully")
+            else:
+                self._view.update_template_status("Error: Save failed")
+                
+        except Exception as e:
+            self._view.update_template_status(f"Error: {str(e)}")
+            logger.error(f"Failed to save template: {e}", exc_info=True)
+
     def on_threshold_changed(self, value: float):
         """Handle threshold change"""
         self._threshold = value

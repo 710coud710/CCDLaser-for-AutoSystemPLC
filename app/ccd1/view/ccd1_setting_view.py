@@ -12,7 +12,7 @@ from typing import Optional
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QGroupBox, QTextEdit, QSpinBox, QDoubleSpinBox,
-    QFileDialog, QMessageBox, QSlider, QCheckBox, QTabWidget
+    QFileDialog, QMessageBox, QSlider, QCheckBox, QTabWidget, QLineEdit
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage, QPixmap
@@ -41,6 +41,7 @@ class CCD1SettingView(QMainWindow):
     template_load_requested = Signal()
     template_capture_requested = Signal()  # Capture from stream
     threshold_changed = Signal(float)
+    save_template_requested = Signal(str)  # title
     exposure_changed = Signal(int)
     gain_changed = Signal(int)
     brightness_changed = Signal(int)
@@ -132,7 +133,15 @@ class CCD1SettingView(QMainWindow):
         template_group = QGroupBox("Template Management")
         template_layout = QVBoxLayout()
         
-        template_layout.addWidget(QLabel("2. Create template from:"))
+        # Template Title
+        title_layout = QHBoxLayout()
+        title_layout.addWidget(QLabel("Template Title:"))
+        self.txt_template_title = QLineEdit()
+        self.txt_template_title.setPlaceholderText("Enter template name...")
+        title_layout.addWidget(self.txt_template_title)
+        template_layout.addLayout(title_layout)
+        
+        template_layout.addWidget(QLabel("Create template from:"))
         
         # Option 1: Capture from stream
         capture_layout = QHBoxLayout()
@@ -153,6 +162,12 @@ class CCD1SettingView(QMainWindow):
         self.lbl_template_status = QLabel("No template loaded")
         self.lbl_template_status.setStyleSheet("color: #888; font-size: 10px;")
         template_layout.addWidget(self.lbl_template_status)
+        
+        # Save Template Button
+        self.btn_save_template = QPushButton("Save New Template")
+        self.btn_save_template.clicked.connect(self._on_save_template_clicked)
+        self.btn_save_template.setEnabled(False) # Enable after capture/load
+        template_layout.addWidget(self.btn_save_template)
         
         template_group.setLayout(template_layout)
         layout.addWidget(template_group)
@@ -289,6 +304,15 @@ class CCD1SettingView(QMainWindow):
         """Handle load template button"""
         self.template_load_requested.emit()
     
+    def _on_save_template_clicked(self):
+        """Handle save template button"""
+        title = self.txt_template_title.text().strip()
+        if not title:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Invalid Input", "Please enter a template title")
+            return
+        self.save_template_requested.emit(title)
+    
     def _on_threshold_changed(self, value: float):
         """Handle threshold change"""
         self.threshold_changed.emit(value)
@@ -350,10 +374,12 @@ class CCD1SettingView(QMainWindow):
     def update_template_status(self, status: str):
         """Cập nhật trạng thái template"""
         self.lbl_template_status.setText(status)
-        if "loaded" in status.lower() or "saved" in status.lower():
+        if "loaded" in status.lower() or "captured" in status.lower():
             self.lbl_template_status.setStyleSheet("color: #00AA00; font-size: 10px;")
+            self.btn_save_template.setEnabled(True)
         else:
             self.lbl_template_status.setStyleSheet("color: #888; font-size: 10px;")
+            self.btn_save_template.setEnabled(False)
     
     def update_results(self, results: str):
         """Cập nhật kết quả matching"""

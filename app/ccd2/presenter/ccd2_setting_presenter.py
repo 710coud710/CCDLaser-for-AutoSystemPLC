@@ -57,6 +57,7 @@ class CCD2SettingPresenter(QObject):
         self._view.region_delete_requested.connect(self.on_region_delete)
         self._view.process_test_requested.connect(self.on_process_test)
         self._view.capture_master_requested.connect(self.on_capture_master)
+        self._view.load_master_requested.connect(self.on_load_master)
         self._view.save_new_template_requested.connect(self.on_save_new_template)
         self._view.exposure_changed.connect(self.on_exposure_changed)
         self._view.gain_changed.connect(self.on_gain_changed)
@@ -103,12 +104,11 @@ class CCD2SettingPresenter(QObject):
                 
                 # Update template info
                 info = f"Template: {template.name}\n"
-                info += f"{template.description}\n"
-                info += f"Regions: {len(template.crop_regions)}"
+                info += f"Regions: {len(template.ccd2_config.crop_regions)}"
                 self._view.update_template_info(info)
                 
                 # Update regions table
-                self._view.update_regions_table(template.crop_regions)
+                self._view.update_regions_table(template.ccd2_config.crop_regions)
                 
                 logger.info(f"Template loaded: {template_name}")
             else:
@@ -149,22 +149,19 @@ class CCD2SettingPresenter(QObject):
             )
             
             if ok and name:
-                from app.model.template_data import CropRegion
-                
                 x, y, w, h = self._current_roi
-                region = CropRegion(
+                
+                # Add region to template
+                self._current_template.add_ccd2_region(
                     name=name,
                     x=x, y=y,
                     width=w, height=h,
-                    enabled=True,
                     scan_barcode=True
                 )
                 
-                self._current_template.crop_regions.append(region)
-                
                 # Save template
                 if self._template_service.save_template(self._current_template):
-                    self._view.update_regions_table(self._current_template.crop_regions)
+                    self._view.update_regions_table(self._current_template.ccd2_config.crop_regions)
                     logger.info(f"Region '{name}' added to template")
                 else:
                     logger.error("Failed to save template after adding region")
@@ -176,7 +173,7 @@ class CCD2SettingPresenter(QObject):
         if self._current_template is None:
             return
         
-        if index < 0 or index >= len(self._current_template.crop_regions):
+        if index < 0 or index >= len(self._current_template.ccd2_config.crop_regions):
             return
         
         if self._current_roi is None:
@@ -190,7 +187,7 @@ class CCD2SettingPresenter(QObject):
         
         try:
             # Update region with new ROI
-            region = self._current_template.crop_regions[index]
+            region = self._current_template.ccd2_config.crop_regions[index]
             x, y, w, h = self._current_roi
             
             region.x = x
@@ -200,7 +197,7 @@ class CCD2SettingPresenter(QObject):
             
             # Save template
             if self._template_service.save_template(self._current_template):
-                self._view.update_regions_table(self._current_template.crop_regions)
+                self._view.update_regions_table(self._current_template.ccd2_config.crop_regions)
                 logger.info(f"Region '{region.name}' updated")
             else:
                 logger.error("Failed to save template after editing region")
@@ -212,13 +209,13 @@ class CCD2SettingPresenter(QObject):
         if self._current_template is None:
             return
         
-        if index < 0 or index >= len(self._current_template.crop_regions):
+        if index < 0 or index >= len(self._current_template.ccd2_config.crop_regions):
             return
         
         try:
             from PySide6.QtWidgets import QMessageBox
             
-            region = self._current_template.crop_regions[index]
+            region = self._current_template.ccd2_config.crop_regions[index]
             reply = QMessageBox.question(
                 self._view,
                 "Delete Region",
@@ -227,11 +224,11 @@ class CCD2SettingPresenter(QObject):
             )
             
             if reply == QMessageBox.StandardButton.Yes:
-                self._current_template.crop_regions.pop(index)
+                self._current_template.ccd2_config.crop_regions.pop(index)
                 
                 # Save template
                 if self._template_service.save_template(self._current_template):
-                    self._view.update_regions_table(self._current_template.crop_regions)
+                    self._view.update_regions_table(self._current_template.ccd2_config.crop_regions)
                     logger.info(f"Region '{region.name}' deleted")
                 else:
                     logger.error("Failed to save template after deleting region")
@@ -313,28 +310,62 @@ class CCD2SettingPresenter(QObject):
             self._view.update_master_status(f"Error: {str(e)}", enable_save=False)
             logger.error(f"Failed to capture master image: {e}", exc_info=True)
     
-    def on_save_new_template(self, name: str, description: str):
+    def on_load_master(self):
+        """Load master image from file for new template"""
+        try:
+            from PySide6.QtWidgets import QFileDialog
+            file_path, _ = QFileDialog.getOpenFileName(
+                self._view,
+                "Select Master Image",
+                "",
+                "Images (*.png *.jpg *.bmp *.jpeg)"
+            )
+            
+            if file_path:
+                image = cv2.imread(file_path)
+                if image is not None:
+                    # Chuyển về RGB để hiển thị đúng (vì display_image sẽ chuyển lại BGR->RGB hoặc Grayscale)
+                    # Thực tế display_image trong view đang giả định input là BGR và chuyển sang RGB.
+                    # cv2.imread load BGR, nên ta để nguyên.
+                    self._master_image = image
+                    h, w = self._master_image.shape[:2]
+                    self._view.update_master_status(f"Master image loaded: {w}x{h}", enable_save=True)
+                    logger.info(f"Master image loaded from {file_path}: {w}x{h}")
+                else:
+                    self._view.update_master_status("Error: Could not read image", enable_save=False)
+        except Exception as e:
+            self._view.update_master_status(f"Error: {str(e)}", enable_save=False)
+            logger.error(f"Failed to load master image: {e}", exc_info=True)
+
+    def on_save_new_template(self, name: str):
         """Save new template with captured master image and regions"""
+        if not name:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self._view, "Input Error", "Template title cannot be empty")
+            return
+            
         if self._master_image is None:
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(
                 self._view,
                 "No Master Image",
-                "Please capture a master image first"
+                "Please capture or load a master image first"
             )
             return
         
         try:
-            from app.model.template_data import Template
+            from app.model.template_data import Template, CCD2Config
             
             # Create new template
             h, w = self._master_image.shape[:2]
             new_template = Template(
                 name=name,
-                description=description,
-                crop_regions=[],  # Start with empty regions, user can add later
-                master_image_width=w,
-                master_image_height=h
+                description="",  # No description as per user request
+                ccd2_config=CCD2Config(
+                    enabled=True,
+                    master_image_width=w,
+                    master_image_height=h
+                )
             )
             
             # Save template
@@ -351,7 +382,7 @@ class CCD2SettingPresenter(QObject):
                 
                 # Select the new template
                 self._current_template = new_template
-                self._view.update_template_info(f"Template: {name}\n{description}\nRegions: 0")
+                self._view.update_template_info(f"Template: {name}\nRegions: 0")
                 self._view.update_regions_table([])
                 
                 # Clear master image and form

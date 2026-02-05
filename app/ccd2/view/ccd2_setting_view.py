@@ -46,7 +46,8 @@ class CCD2SettingView(QMainWindow):
     region_delete_requested = Signal(int)  # region index
     process_test_requested = Signal()
     capture_master_requested = Signal()  # Capture master image from stream
-    save_new_template_requested = Signal(str, str)  # name, description
+    load_master_requested = Signal()  # Load master image from file
+    save_new_template_requested = Signal(str)  # name only (no description)
     exposure_changed = Signal(int)
     gain_changed = Signal(int)
     brightness_changed = Signal(int)
@@ -175,23 +176,27 @@ class CCD2SettingView(QMainWindow):
         creation_group = QGroupBox("Create New Template")
         creation_layout = QVBoxLayout()
         
-        # Template name and description
-        creation_layout.addWidget(QLabel("Template Name:"))
+        # Template name
+        creation_layout.addWidget(QLabel("Template Title:"))
         self.txt_new_template_name = QLineEdit()
         self.txt_new_template_name.setPlaceholderText("Enter template name...")
         creation_layout.addWidget(self.txt_new_template_name)
         
-        creation_layout.addWidget(QLabel("Description:"))
-        self.txt_new_template_desc = QLineEdit()
-        self.txt_new_template_desc.setPlaceholderText("Enter description...")
-        creation_layout.addWidget(self.txt_new_template_desc)
+        creation_layout.addWidget(QLabel("Create template from:"))
         
-        # Capture master image button
-        self.btn_capture_master = QPushButton("Capture Master Image from Stream")
+        # Option 1: Capture master image from stream
+        self.btn_capture_master = QPushButton("Capture from Stream")
         self.btn_capture_master.clicked.connect(self._on_capture_master_clicked)
+        self.btn_capture_master.setToolTip("Capture current frame as master image")
         creation_layout.addWidget(self.btn_capture_master)
         
-        self.lbl_master_status = QLabel("No master image captured")
+        # Option 2: Load from file
+        self.btn_load_master = QPushButton("Load from File")
+        self.btn_load_master.clicked.connect(self._on_load_master_clicked)
+        self.btn_load_master.setToolTip("Load master image from file")
+        creation_layout.addWidget(self.btn_load_master)
+        
+        self.lbl_master_status = QLabel("No master image loaded")
         self.lbl_master_status.setStyleSheet("color: #888; font-size: 10px;")
         creation_layout.addWidget(self.lbl_master_status)
         
@@ -348,14 +353,13 @@ class CCD2SettingView(QMainWindow):
     def _on_save_new_template_clicked(self):
         """Handle save new template button"""
         name = self.txt_new_template_name.text().strip()
-        desc = self.txt_new_template_desc.text().strip()
         
         if not name:
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Invalid Input", "Please enter a template name")
             return
         
-        self.save_new_template_requested.emit(name, desc)
+        self.save_new_template_requested.emit(name)
     
     def _on_exposure_changed(self, value: int):
         """Handle exposure change"""
@@ -382,6 +386,10 @@ class CCD2SettingView(QMainWindow):
     def _on_cancel_clicked(self):
         """Handle cancel button"""
         self.cancel_requested.emit()
+    
+    def _on_load_master_clicked(self):
+        """Handle load master image from file button"""
+        self.load_master_requested.emit()
     
     def display_image(self, frame: np.ndarray):
         """Hiển thị ảnh từ CCD2"""

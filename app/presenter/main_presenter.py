@@ -255,6 +255,7 @@ class MainPresenter(QObject):
             ccd1_setting_presenter = CCD1SettingPresenter(
                 ccd1_setting_view,
                 None,  # Camera service (sẽ dùng worker)
+                self._template_service,
                 template_dir="templates/ccd1"
             )
             

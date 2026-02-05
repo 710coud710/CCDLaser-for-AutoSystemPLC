@@ -74,6 +74,9 @@ class MainView(QMainWindow):
         right_panel = self._create_control_panel_with_tabs()
         main_layout.addWidget(right_panel, stretch=1)
         
+        # Menu bar
+        self._create_menu_bar()
+        
         # Status bar
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
@@ -121,6 +124,20 @@ class MainView(QMainWindow):
         main_layout.addWidget(group_ccd1)
         container.setLayout(main_layout)
         return container
+    
+    def _create_menu_bar(self):
+        """Tạo menu bar"""
+        menubar = self.menuBar()
+        
+        # Actions menu
+        actions_menu = menubar.addMenu("Actions")
+        
+        # Manual Start CCD2
+        manual_start_action = actions_menu.addAction("Manual Start CCD2")
+        manual_start_action.setToolTip("Capture frame from CCD2 and process with template")
+        manual_start_action.triggered.connect(self._on_manual_start_clicked)
+        
+        return menubar
     
     def _create_control_panel_with_tabs(self) -> QWidget:
         widget = QWidget()
@@ -547,31 +564,26 @@ class MainView(QMainWindow):
         self.chk_show_regions_running.setChecked(self._show_regions_enabled)
         self.chk_show_regions_running.stateChanged.connect(self._on_show_regions_changed)
         barcode_layout.addWidget(self.chk_show_regions_running)
-
-        # Manual Start button: capture frame from camera and process with template
-        self.btn_manual_start = QPushButton("Manual Start (Capture && Process)")
-        self.btn_manual_start.clicked.connect(self._on_manual_start_clicked)
-        barcode_layout.addWidget(self.btn_manual_start)
         
         barcode_group.setLayout(barcode_layout)
         layout.addWidget(barcode_group)
         
-        # Barcode Results display
-        results_group = QGroupBox("Barcode Results")
-        results_layout = QVBoxLayout()
+        # Log display (hoạt động và kết quả của CCD1 và CCD2)
+        log_group = QGroupBox("Log")
+        log_layout = QVBoxLayout()
         
-        self.txt_barcode_results = QTextEdit()
-        self.txt_barcode_results.setReadOnly(True)
-        self.txt_barcode_results.setMaximumHeight(150)
-        self.txt_barcode_results.setPlaceholderText("No barcodes detected")
-        results_layout.addWidget(self.txt_barcode_results)
+        self.txt_log = QTextEdit()
+        self.txt_log.setReadOnly(True)
+        self.txt_log.setMaximumHeight(200)
+        self.txt_log.setPlaceholderText("Activity log will appear here...")
+        log_layout.addWidget(self.txt_log)
         
-        self.btn_clear_barcode = QPushButton("Clear Results")
-        self.btn_clear_barcode.clicked.connect(self._on_clear_barcode_clicked)
-        results_layout.addWidget(self.btn_clear_barcode)
+        # self.btn_clear_log = QPushButton("Clear Log")
+        # self.btn_clear_log.clicked.connect(self._on_clear_log_clicked)
+        # log_layout.addWidget(self.btn_clear_log)
         
-        results_group.setLayout(results_layout)
-        layout.addWidget(results_group)
+        log_group.setLayout(log_layout)
+        layout.addWidget(log_group)
         
         layout.addStretch()
         widget.setLayout(layout)
@@ -1036,6 +1048,36 @@ class MainView(QMainWindow):
         """Handle capture button"""
         if self._presenter:
             self._presenter.on_capture_clicked()
+    
+    def _on_manual_start_clicked(self):
+        """Handle manual start CCD2 (from menu)"""
+        if self._presenter and hasattr(self._presenter, "on_manual_start_clicked"):
+            self._presenter.on_manual_start_clicked()
+    
+    # def _on_clear_log_clicked(self):
+    #     """Handle clear log button"""
+    #     if hasattr(self, 'txt_log'):
+    #         self.txt_log.clear()
+    
+    def append_log(self, message: str, source: str = ""):
+        """
+        Append message to log
+        Args:
+            message: Log message
+            source: Source of message (CCD1, CCD2, System, etc.)
+        """
+        if hasattr(self, 'txt_log'):
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            if source:
+                log_entry = f"[{timestamp}] [{source}] {message}"
+            else:
+                log_entry = f"[{timestamp}] {message}"
+            self.txt_log.append(log_entry)
+            # Auto scroll to bottom
+            self.txt_log.verticalScrollBar().setValue(
+                self.txt_log.verticalScrollBar().maximum()
+            )
     
     def update_camera_settings_controls(self, settings: dict):
         """Update camera settings controls with loaded values"""
