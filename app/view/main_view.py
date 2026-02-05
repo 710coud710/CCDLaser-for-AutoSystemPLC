@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QTabWidget, QScrollArea,
     QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QRect, QPoint
+from PySide6.QtCore import Qt, QTimer, Signal, QRect, QPoint, QSize
 from PySide6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QIcon
 from .view_interface import IView, IPresenter
 from .image_display_widget import ImageDisplayWidget
@@ -125,24 +125,81 @@ class MainView(QMainWindow):
     def _create_control_panel_with_tabs(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout()
-        conn_group = self._create_connection_group()
-        layout.addWidget(conn_group)
         
-        # Streaming group (CCD2 - camera chính)
-        stream_group = self._create_streaming_group()
-        layout.addWidget(stream_group)
-
-        # CCD1 control group (start/stop QThread độc lập)
-        ccd1_group = self._create_ccd1_group()
-        layout.addWidget(ccd1_group)
+        # === Connection & Stream (gộp thành 1) ===
+        conn_stream_group = QGroupBox("Camera Control")
+        conn_stream_layout = QHBoxLayout()
+        conn_stream_layout.setSpacing(10)
+        
+        # Connect button với icon
+        self.btn_connect = QPushButton()
+        connect_icon = QIcon("assets/svg/connect.svg")
+        self.btn_connect.setIcon(connect_icon)
+        self.btn_connect.setToolTip("Connect & Start Stream")
+        self.btn_connect.setMinimumSize(50, 50)
+        self.btn_connect.setIconSize(QSize(32, 32))
+        self.btn_connect.clicked.connect(self._on_connect_clicked)
+        conn_stream_layout.addWidget(self.btn_connect)
+        
+        # Disconnect button (ẩn ban đầu)
+        self.btn_disconnect = QPushButton()
+        disconnect_icon = QIcon("assets/svg/stop.svg")  # Dùng stop icon
+        self.btn_disconnect.setIcon(disconnect_icon)
+        self.btn_disconnect.setToolTip("Disconnect & Stop Stream")
+        self.btn_disconnect.setMinimumSize(50, 50)
+        self.btn_disconnect.setIconSize(QSize(32, 32))
+        self.btn_disconnect.clicked.connect(self._on_disconnect_clicked)
+        self.btn_disconnect.setVisible(False)
+        conn_stream_layout.addWidget(self.btn_disconnect)
+        
+        # Capture CCD1 button
+        self.btn_capture_ccd1 = QPushButton()
+        capture_icon = QIcon("assets/svg/capture.svg")
+        self.btn_capture_ccd1.setIcon(capture_icon)
+        self.btn_capture_ccd1.setToolTip("Capture CCD1")
+        self.btn_capture_ccd1.setMinimumSize(50, 50)
+        self.btn_capture_ccd1.setIconSize(QSize(32, 32))
+        self.btn_capture_ccd1.clicked.connect(self._on_capture_ccd1_clicked)
+        self.btn_capture_ccd1.setEnabled(False)
+        conn_stream_layout.addWidget(self.btn_capture_ccd1)
+        
+        # Capture CCD2 button
+        self.btn_capture_ccd2 = QPushButton()
+        self.btn_capture_ccd2.setIcon(capture_icon)
+        self.btn_capture_ccd2.setToolTip("Capture CCD2")
+        self.btn_capture_ccd2.setMinimumSize(50, 50)
+        self.btn_capture_ccd2.setIconSize(QSize(32, 32))
+        self.btn_capture_ccd2.clicked.connect(self._on_capture_ccd2_clicked)
+        self.btn_capture_ccd2.setEnabled(False)
+        conn_stream_layout.addWidget(self.btn_capture_ccd2)
+        
+        conn_stream_layout.addStretch()
+        conn_stream_group.setLayout(conn_stream_layout)
+        layout.addWidget(conn_stream_group)
+        
+        # === Settings ===
+        settings_group = QGroupBox("Settings")
+        settings_layout = QHBoxLayout()
+        settings_layout.setSpacing(10)
+        
+        # Setting CCD1 button
+        self.btn_ccd1_setting = QPushButton("Setting CCD1")
+        self.btn_ccd1_setting.setMinimumHeight(40)
+        self.btn_ccd1_setting.clicked.connect(self._on_ccd1_setting_clicked)
+        settings_layout.addWidget(self.btn_ccd1_setting)
+        
+        # Setting CCD2 button
+        self.btn_ccd2_setting = QPushButton("Setting CCD2")
+        self.btn_ccd2_setting.setMinimumHeight(40)
+        self.btn_ccd2_setting.clicked.connect(self._on_ccd2_setting_clicked)
+        settings_layout.addWidget(self.btn_ccd2_setting)
+        
+        settings_group.setLayout(settings_layout)
+        layout.addWidget(settings_group)
         
         # Running Mode panel (không dùng tab nữa)
         running_panel = self._create_running_mode_panel()
         layout.addWidget(running_panel)
-        
-        # Camera info (chung) - hiển thị ở dưới cùng
-        # info_group = self._create_camera_info_group()
-        # layout.addWidget(info_group)
         
         # Spacer
         layout.addStretch()
@@ -706,11 +763,9 @@ class MainView(QMainWindow):
             self.btn_disconnect.setVisible(True)
             self.btn_disconnect.setEnabled(True)
             
-            # Streaming: Hiện Start, ẩn Stop
-            self.btn_start_stream.setVisible(True)
-            self.btn_start_stream.setEnabled(True)
-            self.btn_stop_stream.setVisible(False)
-            self.btn_capture.setEnabled(True)
+            # Enable capture buttons
+            self.btn_capture_ccd1.setEnabled(True)
+            self.btn_capture_ccd2.setEnabled(True)
             
         elif status == "disconnected" or status == "idle":
             # Connection: Hiện Connect, ẩn Disconnect
@@ -718,10 +773,9 @@ class MainView(QMainWindow):
             self.btn_connect.setEnabled(True)
             self.btn_disconnect.setVisible(False)
             
-            # Streaming: Ẩn cả Start và Stop
-            self.btn_start_stream.setVisible(False)
-            self.btn_stop_stream.setVisible(False)
-            self.btn_capture.setEnabled(False)
+            # Disable capture buttons
+            self.btn_capture_ccd1.setEnabled(False)
+            self.btn_capture_ccd2.setEnabled(False)
             
             self.image_display.setText("No Camera Connected")
             
@@ -738,25 +792,23 @@ class MainView(QMainWindow):
             self.btn_connect.setVisible(False)
             self.btn_disconnect.setVisible(True)
             
-            # Streaming: Ẩn Start, hiện Stop
-            self.btn_start_stream.setVisible(False)
-            self.btn_stop_stream.setVisible(True)
-            self.btn_stop_stream.setEnabled(True)
-            self.btn_capture.setEnabled(True)
+            # Enable capture buttons
+            self.btn_capture_ccd1.setEnabled(True)
+            self.btn_capture_ccd2.setEnabled(True)
             
             
         elif status == "teaching":
             # Teaching mode
-            self.btn_start_stream.setEnabled(False)
-            self.btn_stop_stream.setEnabled(True)
-            self.btn_capture.setEnabled(True)
+            self.btn_disconnect.setEnabled(True)
+            self.btn_capture_ccd1.setEnabled(True)
+            self.btn_capture_ccd2.setEnabled(True)
             self.enable_teaching_controls(True)
             
         elif status == "running":
             # Running mode
-            self.btn_start_stream.setEnabled(False)
-            self.btn_stop_stream.setEnabled(True)
-            self.btn_capture.setEnabled(True)
+            self.btn_disconnect.setEnabled(True)
+            self.btn_capture_ccd1.setEnabled(True)
+            self.btn_capture_ccd2.setEnabled(True)
             self.chk_barcode_enabled.setEnabled(True)
             if hasattr(self, "chk_show_regions_running"):
                 self.chk_show_regions_running.setEnabled(True)
@@ -959,6 +1011,16 @@ class MainView(QMainWindow):
         """Handle CCD2 setting button"""
         if self._presenter and hasattr(self._presenter, "on_ccd2_setting_clicked"):
             self._presenter.on_ccd2_setting_clicked()
+    
+    def _on_capture_ccd1_clicked(self):
+        """Handle capture CCD1 button"""
+        if self._presenter and hasattr(self._presenter, "on_capture_ccd1_clicked"):
+            self._presenter.on_capture_ccd1_clicked()
+    
+    def _on_capture_ccd2_clicked(self):
+        """Handle capture CCD2 button"""
+        if self._presenter and hasattr(self._presenter, "on_capture_ccd2_clicked"):
+            self._presenter.on_capture_ccd2_clicked()
     
     def _on_start_stream_clicked(self):
         """Handle start stream button"""
