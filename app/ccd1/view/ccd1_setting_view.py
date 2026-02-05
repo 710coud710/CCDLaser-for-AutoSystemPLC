@@ -12,7 +12,7 @@ from typing import Optional
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QGroupBox, QTextEdit, QSpinBox, QDoubleSpinBox,
-    QFileDialog, QMessageBox, QSlider, QCheckBox
+    QFileDialog, QMessageBox, QSlider, QCheckBox, QTabWidget
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage, QPixmap
@@ -41,6 +41,10 @@ class CCD1SettingView(QMainWindow):
     template_load_requested = Signal()
     template_capture_requested = Signal()  # Capture from stream
     threshold_changed = Signal(float)
+    exposure_changed = Signal(int)
+    gain_changed = Signal(int)
+    brightness_changed = Signal(int)
+    contrast_changed = Signal(int)
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -63,9 +67,18 @@ class CCD1SettingView(QMainWindow):
         left_panel = self._create_camera_panel()
         main_layout.addWidget(left_panel, stretch=3)
         
-        # Right panel - Controls
-        right_panel = self._create_control_panel()
-        main_layout.addWidget(right_panel, stretch=1)
+        # Right panel - Tab widget cho Template và Setting
+        right_tabs = QTabWidget()
+        
+        # Template tab
+        template_panel = self._create_template_panel()
+        right_tabs.addTab(template_panel, "Template")
+        
+        # Setting tab (camera parameters)
+        setting_panel = self._create_setting_panel()
+        right_tabs.addTab(setting_panel, "Setting")
+        
+        main_layout.addWidget(right_tabs, stretch=1)
     
     def _create_camera_panel(self) -> QWidget:
         """Tạo panel hiển thị camera CCD1"""
@@ -93,8 +106,8 @@ class CCD1SettingView(QMainWindow):
         container.setLayout(layout)
         return container
     
-    def _create_control_panel(self) -> QWidget:
-        """Tạo panel điều khiển"""
+    def _create_template_panel(self) -> QWidget:
+        """Tạo panel Template (ROI và Template Matching)"""
         container = QWidget()
         layout = QVBoxLayout()
         
@@ -180,6 +193,70 @@ class CCD1SettingView(QMainWindow):
         results_group.setLayout(results_layout)
         layout.addWidget(results_group)
         
+        layout.addStretch()
+        container.setLayout(layout)
+        return container
+    
+    def _create_setting_panel(self) -> QWidget:
+        """Tạo panel Setting (Camera Parameters)"""
+        container = QWidget()
+        layout = QVBoxLayout()
+        
+        # === Camera Parameters ===
+        camera_params_group = QGroupBox("Camera Parameters")
+        camera_params_layout = QVBoxLayout()
+        
+        # Exposure Time
+        exposure_layout = QHBoxLayout()
+        exposure_layout.addWidget(QLabel("Exposure (μs):"))
+        self.spin_exposure = QSpinBox()
+        self.spin_exposure.setRange(1, 1000000)
+        self.spin_exposure.setValue(10000)
+        self.spin_exposure.setSuffix(" μs")
+        self.spin_exposure.valueChanged.connect(self._on_exposure_changed)
+        exposure_layout.addWidget(self.spin_exposure)
+        camera_params_layout.addLayout(exposure_layout)
+        
+        # Gain
+        gain_layout = QHBoxLayout()
+        gain_layout.addWidget(QLabel("Gain (dB):"))
+        self.spin_gain = QSpinBox()
+        self.spin_gain.setRange(0, 100)
+        self.spin_gain.setValue(0)
+        self.spin_gain.setSuffix(" dB")
+        self.spin_gain.valueChanged.connect(self._on_gain_changed)
+        gain_layout.addWidget(self.spin_gain)
+        camera_params_layout.addLayout(gain_layout)
+        
+        # Brightness
+        brightness_layout = QHBoxLayout()
+        brightness_layout.addWidget(QLabel("Brightness:"))
+        self.slider_brightness = QSlider(Qt.Horizontal)
+        self.slider_brightness.setRange(1, 100)
+        self.slider_brightness.setValue(50)
+        self.slider_brightness.valueChanged.connect(self._on_brightness_changed)
+        brightness_layout.addWidget(self.slider_brightness)
+        self.lbl_brightness_value = QLabel("50")
+        self.lbl_brightness_value.setMinimumWidth(30)
+        brightness_layout.addWidget(self.lbl_brightness_value)
+        camera_params_layout.addLayout(brightness_layout)
+        
+        # Contrast
+        contrast_layout = QHBoxLayout()
+        contrast_layout.addWidget(QLabel("Contrast:"))
+        self.slider_contrast = QSlider(Qt.Horizontal)
+        self.slider_contrast.setRange(-100, 100)
+        self.slider_contrast.setValue(0)
+        self.slider_contrast.valueChanged.connect(self._on_contrast_changed)
+        contrast_layout.addWidget(self.slider_contrast)
+        self.lbl_contrast_value = QLabel("0")
+        self.lbl_contrast_value.setMinimumWidth(30)
+        contrast_layout.addWidget(self.lbl_contrast_value)
+        camera_params_layout.addLayout(contrast_layout)
+        
+        camera_params_group.setLayout(camera_params_layout)
+        layout.addWidget(camera_params_group)
+        
         # === Save/Cancel Buttons ===
         btn_layout = QHBoxLayout()
         
@@ -215,6 +292,24 @@ class CCD1SettingView(QMainWindow):
     def _on_threshold_changed(self, value: float):
         """Handle threshold change"""
         self.threshold_changed.emit(value)
+    
+    def _on_exposure_changed(self, value: int):
+        """Handle exposure change"""
+        self.exposure_changed.emit(value)
+    
+    def _on_gain_changed(self, value: int):
+        """Handle gain change"""
+        self.gain_changed.emit(value)
+    
+    def _on_brightness_changed(self, value: int):
+        """Handle brightness change"""
+        self.lbl_brightness_value.setText(str(value))
+        self.brightness_changed.emit(value)
+    
+    def _on_contrast_changed(self, value: int):
+        """Handle contrast change"""
+        self.lbl_contrast_value.setText(str(value))
+        self.contrast_changed.emit(value)
     
     def _on_save_clicked(self):
         """Handle save button"""

@@ -136,20 +136,9 @@ class MainView(QMainWindow):
         ccd1_group = self._create_ccd1_group()
         layout.addWidget(ccd1_group)
         
-        # Tab widget cho Running mode và Setting
-        self.mode_tabs = QTabWidget()
-        
-        # Running Mode tab (dùng template đã chọn)
-        running_tab = self._create_running_mode_panel()
-        self.mode_tabs.addTab(running_tab, "Running Mode")
-        
-        # Template Mode đã chuyển vào Setting CCD2
-        
-        # Setting tab (camera parameters)
-        setting_tab = self._create_setting_mode_panel()
-        self.mode_tabs.addTab(setting_tab, "Setting")
-        
-        layout.addWidget(self.mode_tabs)
+        # Running Mode panel (không dùng tab nữa)
+        running_panel = self._create_running_mode_panel()
+        layout.addWidget(running_panel)
         
         # Camera info (chung) - hiển thị ở dưới cùng
         # info_group = self._create_camera_info_group()
