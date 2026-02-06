@@ -59,6 +59,7 @@ class CCD2SettingPresenter(QObject):
         self._view.process_test_requested.connect(self.on_process_test)
         self._view.capture_master_requested.connect(self.on_capture_master)
         self._view.load_master_requested.connect(self.on_load_master)
+        self._view.clear_master_requested.connect(self.on_clear_master)
         self._view.save_new_template_requested.connect(self.on_save_new_template)
         self._view.exposure_changed.connect(self.on_exposure_changed)
         self._view.gain_changed.connect(self.on_gain_changed)
@@ -312,6 +313,7 @@ class CCD2SettingPresenter(QObject):
             
             h, w = self._master_image.shape[:2]
             self._view.update_master_status(f"Master image captured: {w}x{h}", enable_save=True)
+            self._view.display_image(self._master_image)
             logger.info(f"Master image captured: {w}x{h}")
         except Exception as e:
             self._view.update_master_status(f"Error: {str(e)}", enable_save=False)
@@ -335,6 +337,7 @@ class CCD2SettingPresenter(QObject):
                     # Thực tế display_image trong view đang giả định input là BGR và chuyển sang RGB.
                     # cv2.imread load BGR, nên ta để nguyên.
                     self._master_image = image
+                    self._view.display_image(self._master_image)
                     h, w = self._master_image.shape[:2]
                     self._view.update_master_status(f"Master image loaded: {w}x{h}", enable_save=True)
                     logger.info(f"Master image loaded from {file_path}: {w}x{h}")
@@ -343,6 +346,15 @@ class CCD2SettingPresenter(QObject):
         except Exception as e:
             self._view.update_master_status(f"Error: {str(e)}", enable_save=False)
             logger.error(f"Failed to load master image: {e}", exc_info=True)
+
+    def on_clear_master(self):
+        """Clear master image and return to live stream"""
+        try:
+            self._master_image = None
+            self._view.update_master_status("Using live stream", enable_save=False)
+            logger.info("Master image cleared, returning to live stream")
+        except Exception as e:
+            logger.error(f"Failed to clear master image: {e}", exc_info=True)
 
     def on_save_new_template(self, name: str):
         """Save new template with captured master image and regions"""
@@ -461,6 +473,11 @@ class CCD2SettingPresenter(QObject):
         """Update display with new frame"""
         try:
             self._last_frame = frame.copy()
+            
+            # If master image is set, don't update display (user is working with master image)
+            if self._master_image is not None:
+                return
+            
             display_frame = frame.copy()
             
             # Draw template regions if template is loaded

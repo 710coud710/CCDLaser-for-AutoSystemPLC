@@ -828,8 +828,10 @@ class MainView(QMainWindow):
                 self.chk_show_regions_template.setEnabled(True)
     
     def display_image(self, image: np.ndarray):
-        """Hiển thị ảnh"""
+        """Hiển thị ảnh lên panel CCD2 (image_display). Copy để buffer không bị thu hồi."""
         try:
+            # Copy để QImage không giữ tham chiếu tạm (tránh lỗi khi load ảnh template)
+            image = np.ascontiguousarray(image.copy())
             # Convert BGR to RGB if needed
             if len(image.shape) == 3 and image.shape[2] == 3:
                 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -850,7 +852,7 @@ class MainView(QMainWindow):
                     QImage.Format_RGB888
                 )
             
-            # Create pixmap
+            # Create pixmap (Qt copy dữ liệu)
             pixmap = QPixmap.fromImage(q_image)
             
             # Display in image widget

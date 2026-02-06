@@ -1172,6 +1172,12 @@ class MainPresenter(QObject):
                 except Exception:
                     self._last_camera_frame = frame
 
+                # Khi đang tạo template (đã load master image), KHÔNG ghi đè ảnh lên CCD2 panel
+                # để ảnh template hiển thị và user có thể add region. Stream vẫn chạy nền.
+                if self._template_master_image is not None:
+                    # Đang ở chế độ Template Mode - giữ nguyên ảnh template trên image_display
+                    return
+
                 # Dùng chung pipeline xử lý template/barcode
                 display_frame, _ = self._process_frame_with_template(frame)
 
