@@ -50,6 +50,12 @@ class CCD1SettingView(QMainWindow):
     brightness_changed = Signal(int)
     contrast_changed = Signal(int)
     
+    # Template creation signal
+    create_template_requested = Signal(str)  # template name
+    load_base_image_requested = Signal()  # Load image from file
+    capture_base_image_requested = Signal()  # Capture from stream
+    clear_base_image_requested = Signal()  # Clear base image
+    
     # Test tab signals
     test_load_image_requested = Signal()
     test_capture_requested = Signal()
@@ -164,6 +170,45 @@ class CCD1SettingView(QMainWindow):
         self.lbl_pattern_info.setStyleSheet("color: #888; font-size: 10px;")
         self.lbl_pattern_info.setWordWrap(True)
         template_layout.addWidget(self.lbl_pattern_info)
+        
+        # Base Image Source (for template creation)
+        template_layout.addWidget(QLabel("Base Image Source:"))
+        
+        image_source_layout = QHBoxLayout()
+        self.btn_load_image = QPushButton("Load from File")
+        self.btn_load_image.setToolTip("Load an image file to use as base for template creation")
+        self.btn_load_image.clicked.connect(self._on_load_image_clicked)
+        image_source_layout.addWidget(self.btn_load_image)
+        
+        self.btn_capture_image = QPushButton("Capture from Stream")
+        self.btn_capture_image.setToolTip("Capture current camera frame as base image")
+        self.btn_capture_image.clicked.connect(self._on_capture_image_clicked)
+        image_source_layout.addWidget(self.btn_capture_image)
+        template_layout.addLayout(image_source_layout)
+        
+        self.lbl_base_image_status = QLabel("Using live stream")
+        self.lbl_base_image_status.setStyleSheet("color: #888; font-size: 10px;")
+        template_layout.addWidget(self.lbl_base_image_status)
+        
+        self.btn_clear_base_image = QPushButton("Clear (Use Live Stream)")
+        self.btn_clear_base_image.setToolTip("Clear base image and return to live stream")
+        self.btn_clear_base_image.clicked.connect(self._on_clear_base_image_clicked)
+        template_layout.addWidget(self.btn_clear_base_image)
+        
+        # Create New Template
+        template_layout.addWidget(QLabel("Create New Template:"))
+        
+        template_name_layout = QHBoxLayout()
+        template_name_layout.addWidget(QLabel("Name:"))
+        self.txt_new_template_name = QLineEdit()
+        self.txt_new_template_name.setPlaceholderText("Enter template name...")
+        template_name_layout.addWidget(self.txt_new_template_name)
+        template_layout.addLayout(template_name_layout)
+        
+        self.btn_create_template = QPushButton("Create Template")
+        self.btn_create_template.setToolTip("Create new template with current ROI and pattern")
+        self.btn_create_template.clicked.connect(self._on_create_template_clicked)
+        template_layout.addWidget(self.btn_create_template)
         
         template_group.setLayout(template_layout)
         layout.addWidget(template_group)
@@ -326,9 +371,38 @@ class CCD1SettingView(QMainWindow):
         else:
             self.lbl_pattern_info.setStyleSheet("color: #888; font-size: 10px;")
     
+    def update_base_image_status(self, status: str):
+        """Update base image status label"""
+        self.lbl_base_image_status.setText(status)
+        if "loaded" in status.lower() or "captured" in status.lower():
+            self.lbl_base_image_status.setStyleSheet("color: #00AA00; font-size: 10px;")
+        else:
+            self.lbl_base_image_status.setStyleSheet("color: #888; font-size: 10px;")
+    
     def _on_threshold_changed(self, value: float):
         """Handle threshold change"""
         self.threshold_changed.emit(value)
+    
+    def _on_create_template_clicked(self):
+        """Handle create template button"""
+        template_name = self.txt_new_template_name.text().strip()
+        if not template_name:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Invalid Input", "Please enter a template name")
+            return
+        self.create_template_requested.emit(template_name)
+    
+    def _on_load_image_clicked(self):
+        """Handle load image from file button"""
+        self.load_base_image_requested.emit()
+    
+    def _on_capture_image_clicked(self):
+        """Handle capture image from stream button"""
+        self.capture_base_image_requested.emit()
+    
+    def _on_clear_base_image_clicked(self):
+        """Handle clear base image button"""
+        self.clear_base_image_requested.emit()
     
     def _on_exposure_changed(self, value: int):
         """Handle exposure change"""

@@ -35,6 +35,7 @@ class CCD1SettingPresenter(QObject):
         self._current_template = None
         self._last_frame: Optional[np.ndarray] = None
         self._test_image: Optional[np.ndarray] = None  # For testing
+        self._base_image: Optional[np.ndarray] = None  # For template creation (loaded or captured)
         
         # Camera settings service
         from app.service.camera_settings_service import CameraSettingsService
@@ -67,6 +68,12 @@ class CCD1SettingPresenter(QObject):
         self._view.contrast_changed.connect(self.on_contrast_changed)
         self._view.save_requested.connect(self.on_save_settings)
         self._view.cancel_requested.connect(self.on_cancel)
+        
+        # Template creation signals
+        self._view.create_template_requested.connect(self.on_create_template)
+        self._view.load_base_image_requested.connect(self.on_load_base_image)
+        self._view.capture_base_image_requested.connect(self.on_capture_base_image)
+        self._view.clear_base_image_requested.connect(self.on_clear_base_image)
         
         # Test tab signals
         self._view.test_load_image_requested.connect(self.on_test_load_image)
@@ -187,6 +194,120 @@ class CCD1SettingPresenter(QObject):
         except Exception as e:
             self._view.update_pattern_info(f"Error: {str(e)}")
             logger.error(f"Failed to set pattern: {e}", exc_info=True)
+    
+    def on_create_template(self, template_name: str):
+        """Create new template with current ROI and pattern"""
+        try:
+            if not self._current_roi:
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.warning(self._view, "No ROI", "Please select an ROI first")
+                return
+            
+            # Use base image if available, otherwise use last frame
+            source_image = self._base_image if self._base_image is not None else self._last_frame
+            
+            if source_image is None:
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.warning(self._view, "No Image", "No image available. Load an image or capture from stream.")
+                return
+            
+            # Create new template
+            from app.model.template_data.template_model import Template, CCD1Config
+            new_template = Template(name=template_name)
+            
+            # Set CCD1 config with ROI
+            x, y, w, h = self._current_roi
+            new_template.ccd1_config = CCD1Config(
+                enabled=True,
+                roi_x=x,
+                roi_y=y,
+                roi_width=w,
+                roi_height=h,
+                match_threshold=self._threshold
+            )
+            
+            # Save pattern image from ROI
+            roi = source_image[y:y+h, x:x+w]
+            image_filename = f"{template_name}_ccd1_pattern.png"
+            image_path = os.path.join(self._images_dir, image_filename)
+            cv2.imwrite(image_path, roi)
+            new_template.ccd1_config.template_image_path = image_path
+            
+            # Save template
+            if self._template_service.save_template(new_template):
+                self._view.update_pattern_info(f"Template '{template_name}' created!")
+                logger.info(f"New template created: '{template_name}'")
+                
+                # Reload templates
+                self._load_templates()
+                
+                # Select the new template
+                self._view.combo_template.setCurrentText(template_name)
+                
+                # Clear input
+                self._view.txt_new_template_name.clear()
+            else:
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.warning(self._view, "Error", "Failed to save template")
+                
+        except Exception as e:
+            logger.error(f"Failed to create template: {e}", exc_info=True)
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(self._view, "Error", f"Failed to create template: {str(e)}")
+    
+    def on_load_base_image(self):
+        """Load base image from file for template creation"""
+        try:
+            from PySide6.QtWidgets import QFileDialog
+            
+            file_path, _ = QFileDialog.getOpenFileName(
+                self._view,
+                "Select Base Image",
+                "",
+                "Image Files (*.png *.jpg *.jpeg *.bmp);;All Files (*)"
+            )
+            
+            if file_path:
+                import cv2
+                image = cv2.imread(file_path)
+                
+                if image is not None:
+                    self._base_image = image
+                    self._view.display_image(image)
+                    
+                    import os
+                    filename = os.path.basename(file_path)
+                    self._view.update_base_image_status(f"Loaded: {filename}")
+                    logger.info(f"Base image loaded: {filename}")
+                else:
+                    self._view.update_base_image_status("Failed to load image")
+                    logger.error("Failed to load base image")
+        except Exception as e:
+            logger.error(f"Error loading base image: {e}", exc_info=True)
+            self._view.update_base_image_status("Error loading image")
+    
+    def on_capture_base_image(self):
+        """Capture current frame as base image for template creation"""
+        try:
+            if self._last_frame is not None:
+                self._base_image = self._last_frame.copy()
+                self._view.update_base_image_status("Captured from stream")
+                logger.info("Base image captured from stream")
+            else:
+                self._view.update_base_image_status("No camera frame available")
+                logger.warning("No camera frame available for base image capture")
+        except Exception as e:
+            logger.error(f"Error capturing base image: {e}", exc_info=True)
+            self._view.update_base_image_status("Error capturing image")
+    
+    def on_clear_base_image(self):
+        """Clear base image and return to live stream"""
+        try:
+            self._base_image = None
+            self._view.update_base_image_status("Using live stream")
+            logger.info("Base image cleared, using live stream")
+        except Exception as e:
+            logger.error(f"Error clearing base image: {e}", exc_info=True)
 
     def on_threshold_changed(self, value: float):
         """Handle threshold change"""
@@ -245,6 +366,11 @@ class CCD1SettingPresenter(QObject):
         """Update display with new frame and perform matching if template exists"""
         try:
             self._last_frame = frame.copy()
+            
+            # If base image is set, don't update display (user is working with loaded/captured image)
+            if self._base_image is not None:
+                return
+            
             display_frame = frame.copy()
             
             # Perform template matching if template and ROI exist
