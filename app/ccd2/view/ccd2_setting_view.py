@@ -53,6 +53,11 @@ class CCD2SettingView(QMainWindow):
     brightness_changed = Signal(int)
     contrast_changed = Signal(int)
     
+    # Test tab signals
+    test_load_image_requested = Signal()  # Load image from file for testing
+    test_capture_requested = Signal()  # Capture from camera for testing
+    test_run_requested = Signal()  # Run test with current image
+    
     def __init__(self, parent=None):
         super().__init__(parent)
         self._init_ui()
@@ -84,6 +89,10 @@ class CCD2SettingView(QMainWindow):
         # Setting tab (camera parameters)
         setting_panel = self._create_setting_panel()
         right_tabs.addTab(setting_panel, "Setting")
+        
+        # Test tab
+        test_panel = self._create_test_panel()
+        right_tabs.addTab(test_panel, "Test")
         
         main_layout.addWidget(right_tabs, stretch=1)
     
@@ -467,4 +476,92 @@ class CCD2SettingView(QMainWindow):
             self.lbl_master_status.setStyleSheet("color: #888; font-size: 10px;")
         
         self.btn_save_new_template.setEnabled(enable_save)
+    
+    def _create_test_panel(self) -> QWidget:
+        """Tạo panel Test - test template với ảnh"""
+        container = QWidget()
+        layout = QVBoxLayout()
+        
+        # Template selection
+        template_group = QGroupBox("Template Selection")
+        template_layout = QVBoxLayout()
+        
+        template_layout.addWidget(QLabel("Select Template:"))
+        self.combo_test_template = QComboBox()
+        template_layout.addWidget(self.combo_test_template)
+        
+        self.lbl_test_template_info = QLabel("No template selected")
+        self.lbl_test_template_info.setStyleSheet("color: #888; font-size: 10px;")
+        template_layout.addWidget(self.lbl_test_template_info)
+        
+        template_group.setLayout(template_layout)
+        layout.addWidget(template_group)
+        
+        # Image source
+        source_group = QGroupBox("Test Image Source")
+        source_layout = QVBoxLayout()
+        
+        self.btn_test_load_image = QPushButton("Load Image from File")
+        self.btn_test_load_image.clicked.connect(lambda: self.test_load_image_requested.emit())
+        source_layout.addWidget(self.btn_test_load_image)
+        
+        self.btn_test_capture = QPushButton("Capture from Camera")
+        self.btn_test_capture.clicked.connect(lambda: self.test_capture_requested.emit())
+        source_layout.addWidget(self.btn_test_capture)
+        
+        self.lbl_test_image_status = QLabel("No test image loaded")
+        self.lbl_test_image_status.setStyleSheet("color: #888; font-size: 10px;")
+        source_layout.addWidget(self.lbl_test_image_status)
+        
+        source_group.setLayout(source_layout)
+        layout.addWidget(source_group)
+        
+        # Run test
+        test_group = QGroupBox("Run Test")
+        test_layout = QVBoxLayout()
+        
+        self.btn_test_run = QPushButton("Run Test")
+        self.btn_test_run.setEnabled(False)
+        self.btn_test_run.clicked.connect(lambda: self.test_run_requested.emit())
+        self.btn_test_run.setStyleSheet("font-weight: bold; padding: 10px;")
+        test_layout.addWidget(self.btn_test_run)
+        
+        test_group.setLayout(test_layout)
+        layout.addWidget(test_group)
+        
+        # Results
+        results_group = QGroupBox("Test Results")
+        results_layout = QVBoxLayout()
+        
+        self.txt_test_results = QTextEdit()
+        self.txt_test_results.setReadOnly(True)
+        self.txt_test_results.setMaximumHeight(200)
+        self.txt_test_results.setPlaceholderText("Test results will appear here...")
+        results_layout.addWidget(self.txt_test_results)
+        
+        results_group.setLayout(results_layout)
+        layout.addWidget(results_group)
+        
+        layout.addStretch()
+        container.setLayout(layout)
+        return container
+    
+    def update_test_template_list(self, templates: list):
+        """Update test template combo box"""
+        self.combo_test_template.clear()
+        self.combo_test_template.addItems(templates)
+    
+    def update_test_image_status(self, status: str):
+        """Update test image status"""
+        self.lbl_test_image_status.setText(status)
+        if "loaded" in status.lower() or "captured" in status.lower():
+            self.lbl_test_image_status.setStyleSheet("color: #00AA00; font-size: 10px;")
+            self.btn_test_run.setEnabled(True)
+        else:
+            self.lbl_test_image_status.setStyleSheet("color: #888; font-size: 10px;")
+            self.btn_test_run.setEnabled(False)
+    
+    def update_test_results(self, results: str):
+        """Update test results"""
+        self.txt_test_results.setText(results)
 

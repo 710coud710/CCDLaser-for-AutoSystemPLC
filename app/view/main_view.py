@@ -1734,6 +1734,29 @@ class MainView(QMainWindow):
         
         self.txt_qr_roi_list.setPlainText(text.strip())
     
+    def display_image(self, frame: np.ndarray):
+        """Hiển thị ảnh từ CCD2 (main camera)"""
+        try:
+             # Convert BGR to RGB
+             if len(frame.shape) == 3 and frame.shape[2] == 3:
+                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+             else:
+                 frame_rgb = frame
+                 
+             # Convert to QImage
+             height, width = frame_rgb.shape[:2]
+             if len(frame_rgb.shape) == 2:
+                 bytes_per_line = width
+                 q_image = QImage(frame_rgb.data, width, height, bytes_per_line, QImage.Format_Grayscale8)
+             else:
+                 bytes_per_line = 3 * width
+                 q_image = QImage(frame_rgb.data, width, height, bytes_per_line, QImage.Format_RGB888)
+                 
+             pixmap = QPixmap.fromImage(q_image)
+             if hasattr(self, 'image_display'):
+                 self.image_display.set_image(pixmap)
+        except Exception as e:
+             logger.error(f"Failed to display CCD2 image: {e}")
     
     def display_ccd1_image(self, frame: np.ndarray):
         """Hiển thị ảnh từ CCD1"""

@@ -40,6 +40,9 @@ class MainPresenter(QObject):
         # CCD1 worker (QThread) - camera độc lập
         self._ccd1_worker: Optional[CCDWorker] = None
         
+        # CCD2 worker (QThread) - camera độc lập
+        self._ccd2_worker: Optional[CCDWorker] = None
+        
         # QR Detection Service (deprecated, using template service now)
         qr_config = settings.get('qr', {})
         self._qr_service = QRDetectionService(qr_config) if qr_config else None
@@ -176,6 +179,123 @@ class MainPresenter(QObject):
             logger.error(f"Auto-start CCD1 failed: {e}", exc_info=True)
             self._view.show_message(f"CCD1 auto-start failed: {e}", "warning")
 
+    # ========== CCD2 Handlers (QThread, camera chính) ==========
+
+    def on_connect_clicked(self):
+        """
+        Connect và start CCD2 camera
+        - Dùng cấu hình camera_ccd2 trong setting/camera.yaml
+        """
+        logger.info("CCD2 connect requested")
+
+        if self._ccd2_worker is not None and self._ccd2_worker.isRunning():
+            self._view.show_message("CCD2 is already running", "info")
+            return
+
+        # Lấy config CCD2
+        ccd2_cfg = (self._settings.get("camera_ccd2", {}) or {})
+        camera_id = ccd2_cfg.get("ip", "1")  # Default camera 1 for CCD2
+
+        try:
+            self._ccd2_worker = CCDWorker(str(camera_id), ccd2_cfg)
+            self._ccd2_worker.frameCaptured.connect(self._on_ccd2_frame_captured)
+            self._ccd2_worker.start()
+
+            # Cập nhật UI
+            if hasattr(self._view, "update_ccd2_status"):
+                try:
+                    self._view.update_ccd2_status("streaming")
+                except Exception:
+                    pass
+
+            self._view.show_message(f"CCD2 connected (camera_id={camera_id})", "success")
+            logger.info(f"CCD2 worker started with camera_id={camera_id}")
+            
+            # Update state machine
+            self._state_machine.transition_to(AppState.CONNECTED)
+            self._state_machine.transition_to(AppState.STREAMING)
+            
+        except Exception as e:
+            logger.error(f"Failed to start CCD2 worker: {e}", exc_info=True)
+            self._view.show_message(f"Failed to connect CCD2: {e}", "error")
+            self._ccd2_worker = None
+
+    def on_disconnect_clicked(self):
+        """Disconnect CCD2 camera"""
+        logger.info("CCD2 disconnect requested")
+        
+        if self._ccd2_worker is None:
+            return
+
+        try:
+            self._ccd2_worker.stop()
+            self._ccd2_worker.wait(2000)
+        except Exception as e:
+            logger.error(f"Error stopping CCD2 worker: {e}", exc_info=True)
+        finally:
+            self._ccd2_worker = None
+
+        if hasattr(self._view, "update_ccd2_status"):
+            try:
+                self._view.update_ccd2_status("stopped")
+            except Exception:
+                pass
+
+        self._view.show_message("CCD2 disconnected", "info")
+        
+        # Update state machine
+        self._state_machine.transition_to(AppState.DISCONNECTED)
+
+    def _on_ccd2_frame_captured(self, frame: np.ndarray):
+        """
+        Nhận frame từ CCD2 (QThread) và xử lý:
+        - Process với template (datamatrix scanning)
+        - Hiển thị lên vùng image CCD2 trên UI
+        """
+        try:
+            display_frame = frame.copy()
+            current_template = self._template_service.get_current_template()
+            
+            # Process if template loaded and barcode enabled
+            if current_template and self._barcode_enabled:
+                results = self._template_service.process_image_with_template(frame, current_template)
+                
+                if results.get("success"):
+                    # Draw template regions if enabled
+                    if hasattr(self._view, 'get_show_regions_enabled') and self._view.get_show_regions_enabled():
+                        display_frame = self._template_service.draw_template_regions(
+                            display_frame, current_template, draw_regions=True
+                        )
+                    
+                    barcode_results = results.get("barcodes", {}) or {}
+                    
+                    # Update barcode results display
+                    if hasattr(self._view, 'update_barcode_results'):
+                        self._view.update_barcode_results(barcode_results)
+                    
+                    # Log results
+                    for region_name, barcode_list in barcode_results.items():
+                        if barcode_list:
+                            for barcode_data in barcode_list:
+                                logger.debug(f"DataMatrix found in '{region_name}': {barcode_data}")
+            
+            # Update CCD2 view
+            if hasattr(self._view, "display_image"):
+                self._view.display_image(display_frame)
+            
+            # Pass frame to CCD2 Setting Presenter if active
+            if hasattr(self, '_ccd2_setting_presenter') and self._ccd2_setting_presenter:
+                try:
+                    if self._ccd2_setting_presenter._view.isVisible():
+                        self._ccd2_setting_presenter.update_frame(frame)
+                    else:
+                        self._ccd2_setting_presenter = None
+                except:
+                    self._ccd2_setting_presenter = None
+
+        except Exception as e:
+            logger.error(f"Error handling CCD2 frame: {e}", exc_info=True)
+
     # ========== CCD1 Handlers (QThread, độc lập với CCD2) ==========
 
     def on_ccd1_start_clicked(self):
@@ -285,33 +405,21 @@ class MainPresenter(QObject):
         try:
             from app.ccd2.view.ccd2_setting_view import CCD2SettingView
             from app.ccd2.presenter.ccd2_setting_presenter import CCD2SettingPresenter
-            from PySide6.QtCore import QTimer
             
             # Tạo view và presenter cho CCD2 setting
             ccd2_setting_view = CCD2SettingView(parent=self._view)
             ccd2_setting_presenter = CCD2SettingPresenter(
                 ccd2_setting_view,
-                self._camera_service,
+                None,  # Camera service (sẽ dùng worker)
                 self._template_service
             )
             
-            # Tạo timer để update frame từ camera service
-            if self._state_machine.is_connected():
-                update_timer = QTimer()
-                
-                def update_frame_from_camera():
-                    try:
-                        frame = self._camera_service.get_frame(timeout_ms=100)
-                        if frame is not None:
-                            ccd2_setting_presenter.update_frame(frame)
-                    except Exception as e:
-                        logger.error(f"Failed to get frame for CCD2 setting: {e}")
-                
-                update_timer.timeout.connect(update_frame_from_camera)
-                update_timer.start(33)  # ~30 FPS
-                
-                # Store timer để không bị garbage collected
-                ccd2_setting_view._update_timer = update_timer
+            # Store presenter reference to pass frames
+            self._ccd2_setting_presenter = ccd2_setting_presenter
+            
+            # Start worker if not running
+            if self._ccd2_worker is not None and not self._ccd2_worker.isRunning():
+                self._ccd2_worker.start()
             
             # Hiển thị setting view
             ccd2_setting_view.show()
@@ -320,25 +428,6 @@ class MainPresenter(QObject):
         except Exception as e:
             logger.error(f"Failed to open CCD2 setting: {e}", exc_info=True)
             self._view.show_message(f"Failed to open CCD2 setting: {e}", "error")
-    
-    
-    def on_disconnect_clicked(self):
-        """User click Disconnect"""
-        logger.info("Disconnect button clicked")
-        
-        # Stop streaming trước nếu đang stream
-        if self._state_machine.is_streaming():
-            self._stop_streaming()
-
-        # Stop CCD1 worker nếu đang chạy
-        try:
-            if self._ccd1_worker is not None and self._ccd1_worker.isRunning():
-                logger.info("Auto-stopping CCD1 worker on disconnect...")
-                self.on_ccd1_stop_clicked()
-        except Exception as e:
-            logger.error(f"Failed to auto-stop CCD1 on disconnect: {e}", exc_info=True)
-
-        self._disconnect_camera()
     
     def on_start_stream_clicked(self):
         """User click Start Stream"""

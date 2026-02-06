@@ -34,6 +34,7 @@ class CCD1SettingPresenter(QObject):
         self._current_roi: Optional[Tuple[int, int, int, int]] = None  # x, y, w, h
         self._current_template = None
         self._last_frame: Optional[np.ndarray] = None
+        self._test_image: Optional[np.ndarray] = None  # For testing
         
         # Camera settings service
         from app.service.camera_settings_service import CameraSettingsService
@@ -66,6 +67,11 @@ class CCD1SettingPresenter(QObject):
         self._view.contrast_changed.connect(self.on_contrast_changed)
         self._view.save_requested.connect(self.on_save_settings)
         self._view.cancel_requested.connect(self.on_cancel)
+        
+        # Test tab signals
+        self._view.test_load_image_requested.connect(self.on_test_load_image)
+        self._view.test_capture_requested.connect(self.on_test_capture)
+        self._view.test_run_requested.connect(self.on_test_run)
     
     def _load_camera_settings(self):
         """Load saved camera settings và update UI"""
@@ -92,6 +98,7 @@ class CCD1SettingPresenter(QObject):
         try:
             templates = self._template_service.list_templates()
             self._view.update_template_list(templates)
+            self._view.update_test_template_list(templates)  # Also update test tab
             logger.info(f"Loaded {len(templates)} templates for CCD1")
         except Exception as e:
             logger.error(f"Failed to load templates: {e}", exc_info=True)
@@ -333,3 +340,105 @@ class CCD1SettingPresenter(QObject):
             self._view.update_results(results_text.strip())
         except Exception as e:
             logger.error(f"Failed to update match results: {e}", exc_info=True)
+    
+    # ========== Test Tab Handlers ==========
+    
+    def on_test_load_image(self):
+        """Load image from file for testing"""
+        try:
+            from PySide6.QtWidgets import QFileDialog
+            
+            file_path, _ = QFileDialog.getOpenFileName(
+                self._view,
+                "Select Test Image",
+                "",
+                "Image Files (*.png *.jpg *.jpeg *.bmp);;All Files (*)"
+            )
+            
+            if file_path:
+                import cv2
+                image = cv2.imread(file_path)
+                
+                if image is not None:
+                    self._test_image = image
+                    self._view.display_image(image)
+                    
+                    import os
+                    filename = os.path.basename(file_path)
+                    self._view.update_test_image_status(f"Loaded: {filename}")
+                    logger.info(f"Test image loaded: {filename}")
+                else:
+                    self._view.update_test_image_status("Failed to load image")
+                    logger.error("Failed to load test image")
+        except Exception as e:
+            logger.error(f"Error loading test image: {e}", exc_info=True)
+            self._view.update_test_image_status("Error loading image")
+    
+    def on_test_capture(self):
+        """Capture current frame from camera for testing"""
+        try:
+            if self._last_frame is not None:
+                self._test_image = self._last_frame.copy()
+                self._view.update_test_image_status("Captured from camera")
+                logger.info("Test image captured from camera")
+            else:
+                self._view.update_test_image_status("No camera frame available")
+                logger.warning("No camera frame available for test capture")
+        except Exception as e:
+            logger.error(f"Error capturing test image: {e}", exc_info=True)
+            self._view.update_test_image_status("Error capturing image")
+    
+    def on_test_run(self):
+        """Run test with current image and selected template"""
+        try:
+            if self._test_image is None:
+                self._view.update_test_results("Error: No test image loaded")
+                return
+            
+            # Get selected template
+            template_name = self._view.combo_test_template.currentText()
+            if not template_name:
+                self._view.update_test_results("Error: No template selected")
+                return
+            
+            # Load template
+            template = self._template_service.load_template(template_name)
+            if not template or not template.ccd1_config.enabled:
+                self._view.update_test_results(f"Error: Template '{template_name}' not configured for CCD1")
+                return
+            
+            # Run pattern matching
+            result = self._template_service.match_ccd1_pattern(self._test_image, template)
+            
+            if result.get("success"):
+                # Draw result on image
+                display_frame = self._template_service.draw_ccd1_result(self._test_image.copy(), result)
+                self._view.display_image(display_frame)
+                
+                # Format results
+                score = result.get("score", 0.0)
+                status = result.get("status", "UNKNOWN")
+                threshold = template.ccd1_config.match_threshold
+                
+                result_text = f"Template: {template_name}\n"
+                result_text += f"CCD1 Pattern Matching Results:\n"
+                result_text += "-" * 40 + "\n\n"
+                result_text += f"Match Score: {score:.4f}\n"
+                result_text += f"Threshold: {threshold:.4f}\n"
+                result_text += f"Status: {status}\n\n"
+                
+                if status == "OK":
+                    result_text += "✓ Pattern matched successfully!"
+                else:
+                    result_text += "✗ Pattern does not match"
+                
+                self._view.update_test_results(result_text)
+                logger.info(f"Test completed for template '{template_name}': {status}")
+            else:
+                error_msg = result.get("error", "Unknown error")
+                self._view.update_test_results(f"Error: {error_msg}")
+                logger.error(f"Test failed: {error_msg}")
+                
+        except Exception as e:
+            logger.error(f"Error running test: {e}", exc_info=True)
+            self._view.update_test_results(f"Error: {str(e)}")

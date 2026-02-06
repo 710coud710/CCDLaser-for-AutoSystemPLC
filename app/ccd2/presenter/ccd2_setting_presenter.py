@@ -32,6 +32,7 @@ class CCD2SettingPresenter(QObject):
         self._current_roi: Optional[tuple] = None
         self._last_frame: Optional[np.ndarray] = None
         self._master_image: Optional[np.ndarray] = None  # For new template creation
+        self._test_image: Optional[np.ndarray] = None  # For testing
         
         # Camera settings service
         from app.service.camera_settings_service import CameraSettingsService
@@ -65,12 +66,18 @@ class CCD2SettingPresenter(QObject):
         self._view.contrast_changed.connect(self.on_contrast_changed)
         self._view.save_requested.connect(self.on_save_settings)
         self._view.cancel_requested.connect(self.on_cancel)
+        
+        # Test tab signals
+        self._view.test_load_image_requested.connect(self.on_test_load_image)
+        self._view.test_capture_requested.connect(self.on_test_capture)
+        self._view.test_run_requested.connect(self.on_test_run)
     
     def _load_templates(self):
         """Load available templates"""
         try:
             templates = self._template_service.list_templates()
             self._view.update_template_list(templates)
+            self._view.update_test_template_list(templates)  # Also update test tab
             logger.info(f"Loaded {len(templates)} templates")
         except Exception as e:
             logger.error(f"Failed to load templates: {e}", exc_info=True)
@@ -468,3 +475,114 @@ class CCD2SettingPresenter(QObject):
             self._view.display_image(display_frame)
         except Exception as e:
             logger.error(f"Failed to update frame: {e}", exc_info=True)
+    
+    # ========== Test Tab Handlers ==========
+    
+    def on_test_load_image(self):
+        """Load image from file for testing"""
+        try:
+            from PySide6.QtWidgets import QFileDialog
+            
+            file_path, _ = QFileDialog.getOpenFileName(
+                self._view,
+                "Select Test Image",
+                "",
+                "Image Files (*.png *.jpg *.jpeg *.bmp);;All Files (*)"
+            )
+            
+            if file_path:
+                import cv2
+                image = cv2.imread(file_path)
+                
+                if image is not None:
+                    self._test_image = image
+                    self._view.display_image(image)
+                    
+                    import os
+                    filename = os.path.basename(file_path)
+                    self._view.update_test_image_status(f"Loaded: {filename}")
+                    logger.info(f"Test image loaded: {filename}")
+                else:
+                    self._view.update_test_image_status("Failed to load image")
+                    logger.error("Failed to load test image")
+        except Exception as e:
+            logger.error(f"Error loading test image: {e}", exc_info=True)
+            self._view.update_test_image_status("Error loading image")
+    
+    def on_test_capture(self):
+        """Capture current frame from camera for testing"""
+        try:
+            if self._last_frame is not None:
+                self._test_image = self._last_frame.copy()
+                self._view.update_test_image_status("Captured from camera")
+                logger.info("Test image captured from camera")
+            else:
+                self._view.update_test_image_status("No camera frame available")
+                logger.warning("No camera frame available for test capture")
+        except Exception as e:
+            logger.error(f"Error capturing test image: {e}", exc_info=True)
+            self._view.update_test_image_status("Error capturing image")
+    
+    def on_test_run(self):
+        """Run test with current image and selected template"""
+        try:
+            if self._test_image is None:
+                self._view.update_test_results("Error: No test image loaded")
+                return
+            
+            # Get selected template
+            template_name = self._view.combo_test_template.currentText()
+            if not template_name:
+                self._view.update_test_results("Error: No template selected")
+                return
+            
+            # Load template
+            template = self._template_service.load_template(template_name)
+            if not template:
+                self._view.update_test_results(f"Error: Failed to load template '{template_name}'")
+                return
+            
+            # Process image with template
+            results = self._template_service.process_image_with_template(
+                self._test_image, template
+            )
+            
+            # Display results
+            if results.get("success"):
+                display_frame = self._test_image.copy()
+                
+                # Draw template regions
+                display_frame = self._template_service.draw_template_regions(
+                    display_frame, template, draw_regions=True
+                )
+                
+                self._view.display_image(display_frame)
+                
+                # Format results
+                barcode_results = results.get("barcodes", {})
+                result_text = f"Template: {template_name}\n"
+                result_text += f"Regions processed: {len(template.ccd2_config.crop_regions)}\n\n"
+                result_text += "Barcode Results:\n"
+                result_text += "-" * 40 + "\n"
+                
+                if barcode_results:
+                    for region_name, barcode_list in barcode_results.items():
+                        result_text += f"\n[{region_name}]\n"
+                        if barcode_list:
+                            for barcode_data in barcode_list:
+                                result_text += f"  ✓ {barcode_data}\n"
+                        else:
+                            result_text += "  ✗ No barcode found\n"
+                else:
+                    result_text += "No barcodes detected\n"
+                
+                self._view.update_test_results(result_text)
+                logger.info(f"Test completed for template '{template_name}'")
+            else:
+                error_msg = results.get("error", "Unknown error")
+                self._view.update_test_results(f"Error: {error_msg}")
+                logger.error(f"Test failed: {error_msg}")
+                
+        except Exception as e:
+            logger.error(f"Error running test: {e}", exc_info=True)
+            self._view.update_test_results(f"Error: {str(e)}")
