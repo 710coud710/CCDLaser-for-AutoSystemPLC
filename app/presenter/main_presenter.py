@@ -259,20 +259,12 @@ class MainPresenter(QObject):
                 template_dir="templates/ccd1"
             )
             
-            # Tạo timer để update frame từ CCD1 worker
-            if self._ccd1_worker is not None and self._ccd1_worker.isRunning():
-                update_timer = QTimer()
-                
-                def update_frame_from_worker():
-                    # Lấy frame từ worker và update vào setting view
-                    # Note: Cần implement cơ chế lấy frame từ worker
-                    pass
-                
-                update_timer.timeout.connect(update_frame_from_worker)
-                update_timer.start(33)  # ~30 FPS
-                
-                # Store timer để không bị garbage collected
-                ccd1_setting_view._update_timer = update_timer
+            # Store presenter reference to pass frames
+            self._ccd1_setting_presenter = ccd1_setting_presenter
+            
+            # Start worker if not running
+            if self._ccd1_worker is not None and not self._ccd1_worker.isRunning():
+                 self._ccd1_worker.start()
             
             # Hiển thị setting view
             ccd1_setting_view.show()
@@ -679,22 +671,34 @@ class MainPresenter(QObject):
     def _on_ccd1_frame_captured(self, frame: np.ndarray):
         """
         Nhận frame từ CCD1 (QThread) và xử lý:
-        - Dùng chung pipeline template/barcode như CCD2
-        - Hiển thị lên vùng image CCD1 trên UI
+        - So sánh với template (nếu có)
+        - Hiển thị kết quả (Green/Red Rect)
         """
         try:
-            display_frame, barcode_results = self._process_frame_with_template(frame)
-
-            # Hiển thị lên CCD1 view nếu UI có
+            display_frame = frame.copy()
+            current_template = self._template_service.get_current_template()
+            
+            # Process if template loaded and enabled for CCD1
+            if current_template and current_template.ccd1_config.enabled:
+                result = self._template_service.match_ccd1_pattern(frame, current_template)
+                
+                # Check status (success means processed ok, check status key for result)
+                if result.get("success"):
+                     display_frame = self._template_service.draw_ccd1_result(display_frame, result)
+            
+            # Update CCD1 view
             if hasattr(self._view, "display_ccd1_image"):
-                try:
-                    self._view.display_ccd1_image(display_frame)
-                except Exception as e:
-                    logger.error(f"Failed to display CCD1 image: {e}", exc_info=True)
+                 self._view.display_ccd1_image(display_frame)
 
-            # Gửi kết quả scan đến server (nếu có barcode)
-            if barcode_results:
-                self._send_scan_result_to_server(barcode_results)
+            # Pass frame to Setting Presenter if active
+            if hasattr(self, '_ccd1_setting_presenter') and self._ccd1_setting_presenter:
+                try:
+                    if self._ccd1_setting_presenter._view.isVisible():
+                         self._ccd1_setting_presenter.update_frame(frame)
+                    else:
+                         self._ccd1_setting_presenter = None
+                except:
+                    self._ccd1_setting_presenter = None
 
         except Exception as e:
             logger.error(f"Error handling CCD1 frame: {e}", exc_info=True)

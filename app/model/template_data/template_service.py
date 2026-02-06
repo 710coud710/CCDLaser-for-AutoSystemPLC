@@ -594,3 +594,112 @@ class TemplateService:
         
         return output
 
+    def match_ccd1_pattern(self, frame: np.ndarray, template: Template) -> Dict[str, Any]:
+        """
+        Process function for CCD1:
+        1. Crop ROI based on template.ccd1_config
+        2. Load pattern image
+        3. Match template
+        4. Return score and result (OK/ERROR)
+        """
+        result = {
+            "success": False,
+            "score": 0.0,
+            "status": "ERROR",
+            "rect": (0,0,0,0)
+        }
+        
+        config = template.ccd1_config
+        if not config.enabled or not config.template_image_path:
+            result["error"] = "CCD1 pattern not configured"
+            return result
+            
+        try:
+            # ROI
+            x, y, w, h = config.roi_x, config.roi_y, config.roi_width, config.roi_height
+            result["rect"] = (x, y, w, h)
+            
+            # Crop current frame ROI
+            fh, fw = frame.shape[:2]
+            # Ensure ROI is within frame
+            x = max(0, min(x, fw-1))
+            y = max(0, min(y, fh-1))
+            w = min(w, fw-x)
+            h = min(h, fh-y)
+            
+            if w <= 0 or h <= 0:
+                 result["error"] = "ROI out of frame"
+                 return result
+
+            frame_roi = frame[y:y+h, x:x+w]
+            
+            # Load template pattern
+            if not os.path.exists(config.template_image_path):
+                result["error"] = "Pattern image file missing"
+                return result
+                
+            pattern = cv2.imread(config.template_image_path)
+            if pattern is None:
+                result["error"] = "Failed to load pattern image"
+                return result
+                
+            # Convert both to grayscale for matching
+            if len(frame_roi.shape) == 3:
+                frame_gray = cv2.cvtColor(frame_roi, cv2.COLOR_BGR2GRAY)
+            else:
+                frame_gray = frame_roi
+                
+            if len(pattern.shape) == 3:
+                pattern_gray = cv2.cvtColor(pattern, cv2.COLOR_BGR2GRAY)
+            else:
+                pattern_gray = pattern
+            
+            # Handle size mismatch by resizing pattern to match frame ROI
+            if frame_gray.shape != pattern_gray.shape:
+                pattern_gray = cv2.resize(pattern_gray, (frame_gray.shape[1], frame_gray.shape[0]))
+                
+            res = cv2.matchTemplate(frame_gray, pattern_gray, cv2.TM_CCOEFF_NORMED)
+            score = float(res.max())
+            result["score"] = score
+            
+            if score >= config.match_threshold:
+                result["status"] = "OK"
+                # result["success"] means process ran ok, let's keep it True
+                # Actually, caller might use success to denote PASS/FAIL.
+                # Let's align with CCD2: success means "processing completed and results available".
+                # But here we want a Pass/Fail judgement.
+                result["success"] = True 
+            else:
+                result["status"] = "ERROR"
+                result["success"] = True
+                
+        except Exception as e:
+            result["error"] = str(e)
+            result["success"] = False
+            logger.error(f"CCD1 processing failed: {e}", exc_info=True)
+            
+        return result
+
+    def draw_ccd1_result(self, frame: np.ndarray, result: Dict[str, Any]) -> np.ndarray:
+        """Draw CCD1 matching result"""
+        output = frame.copy()
+        try:
+            if "rect" in result and result["rect"][2] > 0:
+                x, y, w, h = result["rect"]
+                status = result.get("status", "ERROR")
+                score = result.get("score", 0.0)
+                
+                # Color: Green for OK, Red for ERROR
+                color = (0, 255, 0) if status == "OK" else (0, 0, 255) # BGR
+                
+                # Draw ROI
+                cv2.rectangle(output, (x, y), (x+w, y+h), color, 2)
+                
+                # Draw Label
+                label = f"{status} ({score:.2f})"
+                cv2.putText(output, label, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+        except Exception as e:
+            logger.error(f"Failed to draw CCD1 result: {e}")
+            
+        return output
+

@@ -12,7 +12,8 @@ from typing import Optional
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QGroupBox, QTextEdit, QSpinBox, QDoubleSpinBox,
-    QFileDialog, QMessageBox, QSlider, QCheckBox, QTabWidget, QLineEdit
+    QFileDialog, QMessageBox, QSlider, QCheckBox, QTabWidget, QLineEdit,
+    QComboBox
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage, QPixmap
@@ -38,6 +39,8 @@ class CCD1SettingView(QMainWindow):
     save_requested = Signal()
     cancel_requested = Signal()
     roi_selected = Signal(int, int, int, int)  # x, y, width, height
+    template_selected = Signal(str)
+    set_pattern_requested = Signal() # Set current ROI as pattern for selected template
     template_load_requested = Signal()
     template_capture_requested = Signal()  # Capture from stream
     threshold_changed = Signal(float)
@@ -129,45 +132,29 @@ class CCD1SettingView(QMainWindow):
         roi_group.setLayout(roi_layout)
         layout.addWidget(roi_group)
         
-        # === Template Management ===
-        template_group = QGroupBox("Template Management")
+        # === Template Selection ===
+        template_group = QGroupBox("Template Selection")
         template_layout = QVBoxLayout()
         
-        # Template Title
-        title_layout = QHBoxLayout()
-        title_layout.addWidget(QLabel("Template Title:"))
-        self.txt_template_title = QLineEdit()
-        self.txt_template_title.setPlaceholderText("Enter template name...")
-        title_layout.addWidget(self.txt_template_title)
-        template_layout.addLayout(title_layout)
+        template_layout.addWidget(QLabel("Select Template:"))
+        self.combo_template = QComboBox()
+        self.combo_template.addItem("-- No Template --")
+        self.combo_template.currentTextChanged.connect(self._on_template_changed)
+        template_layout.addWidget(self.combo_template)
         
-        template_layout.addWidget(QLabel("Create template from:"))
+        # Pattern Settings
+        template_layout.addWidget(QLabel("Pattern Settings:"))
         
-        # Option 1: Capture from stream
-        capture_layout = QHBoxLayout()
-        self.btn_capture_template = QPushButton("Capture from Stream")
-        self.btn_capture_template.clicked.connect(self._on_capture_template_clicked)
-        self.btn_capture_template.setToolTip("Capture current frame and use ROI as template")
-        capture_layout.addWidget(self.btn_capture_template)
-        template_layout.addLayout(capture_layout)
+        self.btn_set_pattern = QPushButton("Set Pattern from ROI")
+        self.btn_set_pattern.setToolTip("Capture current ROI and save as pattern for this template")
+        self.btn_set_pattern.clicked.connect(self._on_set_pattern_clicked)
+        self.btn_set_pattern.setEnabled(False) 
+        template_layout.addWidget(self.btn_set_pattern)
         
-        # Option 2: Load from file
-        load_layout = QHBoxLayout()
-        self.btn_load_template = QPushButton("Load from File")
-        self.btn_load_template.clicked.connect(self._on_load_template_clicked)
-        self.btn_load_template.setToolTip("Load template image from file")
-        load_layout.addWidget(self.btn_load_template)
-        template_layout.addLayout(load_layout)
-        
-        self.lbl_template_status = QLabel("No template loaded")
-        self.lbl_template_status.setStyleSheet("color: #888; font-size: 10px;")
-        template_layout.addWidget(self.lbl_template_status)
-        
-        # Save Template Button
-        self.btn_save_template = QPushButton("Save New Template")
-        self.btn_save_template.clicked.connect(self._on_save_template_clicked)
-        self.btn_save_template.setEnabled(False) # Enable after capture/load
-        template_layout.addWidget(self.btn_save_template)
+        self.lbl_pattern_info = QLabel("No pattern set")
+        self.lbl_pattern_info.setStyleSheet("color: #888; font-size: 10px;")
+        self.lbl_pattern_info.setWordWrap(True)
+        template_layout.addWidget(self.lbl_pattern_info)
         
         template_group.setLayout(template_layout)
         layout.addWidget(template_group)
@@ -296,22 +283,39 @@ class CCD1SettingView(QMainWindow):
         self.roi_selected.emit(x, y, width, height)
         logger.info(f"ROI selected: ({x}, {y}, {width}x{height})")
     
-    def _on_capture_template_clicked(self):
-        """Handle capture template from stream button"""
-        self.template_capture_requested.emit()
+
     
-    def _on_load_template_clicked(self):
-        """Handle load template button"""
-        self.template_load_requested.emit()
-    
-    def _on_save_template_clicked(self):
-        """Handle save template button"""
-        title = self.txt_template_title.text().strip()
-        if not title:
-            from PySide6.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "Invalid Input", "Please enter a template title")
-            return
-        self.save_template_requested.emit(title)
+    def _on_template_changed(self, template_name: str):
+        """Handle template selection change"""
+        if template_name and template_name != "-- No Template --":
+            self.template_selected.emit(template_name)
+            self.btn_set_pattern.setEnabled(True)
+        else:
+            self.btn_set_pattern.setEnabled(False)
+            self.update_pattern_info("No template selected")
+            
+    def _on_set_pattern_clicked(self):
+        """Handle set pattern button"""
+        self.set_pattern_requested.emit()
+
+    def update_template_list(self, templates: list):
+        current = self.combo_template.currentText()
+        self.combo_template.blockSignals(True)
+        self.combo_template.clear()
+        self.combo_template.addItem("-- No Template --")
+        for t in templates:
+            self.combo_template.addItem(t)
+        
+        if current in templates:
+            self.combo_template.setCurrentText(current)
+        self.combo_template.blockSignals(False)
+
+    def update_pattern_info(self, info: str):
+        self.lbl_pattern_info.setText(info)
+        if "set" in info.lower() or "loaded" in info.lower() or "saved" in info.lower():
+            self.lbl_pattern_info.setStyleSheet("color: #00AA00; font-size: 10px;")
+        else:
+            self.lbl_pattern_info.setStyleSheet("color: #888; font-size: 10px;")
     
     def _on_threshold_changed(self, value: float):
         """Handle threshold change"""
@@ -371,15 +375,7 @@ class CCD1SettingView(QMainWindow):
         except Exception as e:
             logger.error(f"Failed to display CCD1 image: {e}", exc_info=True)
     
-    def update_template_status(self, status: str):
-        """Cập nhật trạng thái template"""
-        self.lbl_template_status.setText(status)
-        if "loaded" in status.lower() or "captured" in status.lower():
-            self.lbl_template_status.setStyleSheet("color: #00AA00; font-size: 10px;")
-            self.btn_save_template.setEnabled(True)
-        else:
-            self.lbl_template_status.setStyleSheet("color: #888; font-size: 10px;")
-            self.btn_save_template.setEnabled(False)
+
     
     def update_results(self, results: str):
         """Cập nhật kết quả matching"""

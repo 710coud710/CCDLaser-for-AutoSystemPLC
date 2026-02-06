@@ -32,20 +32,22 @@ class CCD1SettingPresenter(QObject):
         
         # State
         self._current_roi: Optional[Tuple[int, int, int, int]] = None  # x, y, w, h
-        self._template_image: Optional[np.ndarray] = None
-        self._template_path: Optional[str] = None
-        self._threshold: float = 0.8
+        self._current_template = None
         self._last_frame: Optional[np.ndarray] = None
         
         # Camera settings service
         from app.service.camera_settings_service import CameraSettingsService
         self._settings_service = CameraSettingsService()
         
-        # Create template directory
-        os.makedirs(self._template_dir, exist_ok=True)
+        # Use template service directory for images
+        self._images_dir = os.path.join(self._template_service.templates_dir, "images")
+        os.makedirs(self._images_dir, exist_ok=True)
         
         # Connect signals
         self._connect_signals()
+        
+        # Load templates
+        self._load_templates()
         
         # Load saved camera settings
         self._load_camera_settings()
@@ -55,9 +57,8 @@ class CCD1SettingPresenter(QObject):
     def _connect_signals(self):
         """Connect view signals to presenter handlers"""
         self._view.roi_selected.connect(self.on_roi_selected)
-        self._view.template_capture_requested.connect(self.on_capture_template)
-        self._view.template_load_requested.connect(self.on_load_template)
-        self._view.save_template_requested.connect(self.on_save_template)
+        self._view.template_selected.connect(self.on_template_selected)
+        self._view.set_pattern_requested.connect(self.on_set_pattern)
         self._view.threshold_changed.connect(self.on_threshold_changed)
         self._view.exposure_changed.connect(self.on_exposure_changed)
         self._view.gain_changed.connect(self.on_gain_changed)
@@ -86,114 +87,109 @@ class CCD1SettingPresenter(QObject):
         self._current_roi = (x, y, width, height)
         logger.info(f"ROI selected: {self._current_roi}")
     
-    def on_capture_template(self):
-        """Capture current frame and use ROI as template (no file dialog)"""
-        if self._current_roi is None:
-            self._view.update_template_status("Error: No ROI selected")
-            logger.warning("Cannot capture template: No ROI selected")
-            return
-        
-        if self._last_frame is None:
-            self._view.update_template_status("Error: No frame available")
-            logger.warning("Cannot capture template: No frame available")
-            return
-        
+    def _load_templates(self):
+        """Load available templates"""
         try:
-            # Extract ROI from current frame
+            templates = self._template_service.list_templates()
+            self._view.update_template_list(templates)
+            logger.info(f"Loaded {len(templates)} templates for CCD1")
+        except Exception as e:
+            logger.error(f"Failed to load templates: {e}", exc_info=True)
+
+    def on_template_selected(self, template_name: str):
+        """Handle template selection"""
+        try:
+            template = self._template_service.load_template(template_name)
+            if template:
+                self._current_template = template
+                # Set as system-wide current template
+                self._template_service.set_current_template(template)
+                
+                # Check if CCD1 config is enabled and has image
+                config = template.ccd1_config
+                
+                info = f"Template: {template.name}\n"
+                
+                if config.enabled and config.template_image_path:
+                    info += f"Pattern: Set (Threshold: {config.match_threshold})\n"
+                    # Load template image for matching visualization
+                    if os.path.exists(config.template_image_path):
+                        self._template_image = cv2.imread(config.template_image_path)
+                        self._view.update_pattern_info(info + "Image loaded")
+                    else:
+                        self._view.update_pattern_info(info + "Image file missing")
+                    
+                    # Update threshold spinbox (block signals to avoid re-triggering save)
+                    self._view.spin_threshold.blockSignals(True)
+                    self._view.spin_threshold.setValue(config.match_threshold)
+                    self._view.spin_threshold.blockSignals(False)
+                    self._threshold = config.match_threshold
+                else:
+                    self._view.update_pattern_info(info + "No pattern set for CCD1")
+                
+                logger.info(f"Template loaded: {template_name}")
+            else:
+                self._view.update_pattern_info("Failed to load template")
+                self._current_template = None
+        except Exception as e:
+            self._view.update_pattern_info(f"Error: {str(e)}")
+            logger.error(f"Failed to load template: {e}", exc_info=True)
+
+    def on_set_pattern(self):
+        """Set current ROI as pattern for selected template"""
+        if self._current_template is None:
+            self._view.update_pattern_info("Please select a template first")
+            return
+            
+        if self._current_roi is None:
+            self._view.update_pattern_info("Please select ROI first")
+            return
+            
+        if self._last_frame is None:
+            return
+
+        try:
+            # Extract ROI
             x, y, w, h = self._current_roi
             roi = self._last_frame[y:y+h, x:x+w]
-            
-            # Use ROI directly as template (no save to file)
             self._template_image = roi.copy()
             
-            # Optionally save to file for persistence
-            template_path = os.path.join(self._template_dir, "template.png")
-            cv2.imwrite(template_path, roi)
-            self._template_path = template_path
+            # Save image
+            image_filename = f"{self._current_template.name}_ccd1_pattern.png"
+            image_path = os.path.join(self._images_dir, image_filename)
+            cv2.imwrite(image_path, roi)
             
-            self._view.update_template_status(f"Template captured: {w}x{h}")
-            logger.info(f"Template captured from stream and saved to {template_path}")
-        except Exception as e:
-            self._view.update_template_status(f"Error: {str(e)}")
-            logger.error(f"Failed to capture template: {e}", exc_info=True)
-    
-    def on_load_template(self):
-        """Load template from file"""
-        try:
-            from PySide6.QtWidgets import QFileDialog
+            # Update config
+            # Keep existing config or create new
+            config = self._current_template.ccd1_config
+            config.enabled = True
+            config.roi_x = x
+            config.roi_y = y
+            config.roi_width = w
+            config.roi_height = h
+            config.template_image_path = image_path
+            config.match_threshold = self._threshold
             
-            file_path, _ = QFileDialog.getOpenFileName(
-                self._view,
-                "Load Template",
-                self._template_dir,
-                "Images (*.png *.jpg *.bmp)"
-            )
-            
-            if not file_path:
-                return
-            
-            # Load template image
-            template = cv2.imread(file_path)
-            if template is None:
-                self._view.update_template_status("Error: Failed to load image")
-                logger.error(f"Failed to load template from {file_path}")
-                return
-            
-            self._template_image = template
-            self._template_path = file_path
-            
-            h, w = template.shape[:2]
-            self._view.update_template_status(f"Template loaded: {w}x{h}")
-            logger.info(f"Template loaded from {file_path}")
-        except Exception as e:
-            self._view.update_template_status(f"Error: {str(e)}")
-            logger.error(f"Failed to load template: {e}", exc_info=True)
-    
-    def on_save_template(self, title: str):
-        """Save current template logic using TemplateService"""
-        if self._template_image is None or self._current_roi is None:
-            self._view.update_template_status("Error: No template or ROI")
-            return
-            
-        try:
-            from app.model.template_data import Template, CCD1Config
-            
-            # Save template image to a file linked to the template
-            # In a real app, you might save it inside the template JSON as base64 or a reference
-            image_filename = f"{title}_ccd1.png"
-            image_path = os.path.join(self._template_dir, image_filename)
-            cv2.imwrite(image_path, self._template_image)
-            
-            # Create/Update Template object
-            x, y, w, h = self._current_roi
-            new_template = Template(
-                name=title,
-                description="", # No description as per user request
-                ccd1_config=CCD1Config(
-                    enabled=True,
-                    roi_x=x,
-                    roi_y=y,
-                    roi_width=w,
-                    roi_height=h,
-                    match_threshold=self._threshold,
-                    template_image_path=image_path
-                )
-            )
-            
-            if self._template_service.save_template(new_template):
-                self._view.update_template_status(f"Template '{title}' saved!")
-                logger.info(f"Template '{title}' saved successfully")
+            # Save template
+            if self._template_service.save_template(self._current_template):
+                self._view.update_pattern_info(f"Pattern saved! ({w}x{h})")
+                logger.info(f"Pattern set for template '{self._current_template.name}'")
             else:
-                self._view.update_template_status("Error: Save failed")
+                self._view.update_pattern_info("Failed to save template")
                 
         except Exception as e:
-            self._view.update_template_status(f"Error: {str(e)}")
-            logger.error(f"Failed to save template: {e}", exc_info=True)
+            self._view.update_pattern_info(f"Error: {str(e)}")
+            logger.error(f"Failed to set pattern: {e}", exc_info=True)
 
     def on_threshold_changed(self, value: float):
         """Handle threshold change"""
         self._threshold = value
         logger.info(f"Threshold changed to {value}")
+        
+        # Update current template if loaded and pattern set
+        if self._current_template and self._current_template.ccd1_config.enabled:
+             self._current_template.ccd1_config.match_threshold = value
+             self._template_service.save_template(self._current_template)
     
     def on_exposure_changed(self, value: int):
         """Handle exposure change"""
