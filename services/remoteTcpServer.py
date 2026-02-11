@@ -84,11 +84,7 @@ class RemoteTcpClient(QObject):
             self.send_line("OK")
     
     def send_fail(self, serial_number: str = ""):
-        """Gửi tín hiệu FAIL đến server
-        
-        Args:
-            serial_number: Mã serial number (SN) để gửi kèm, ví dụ: "FAIL,PT526111603305RQ"
-        """
+        """gửi fail"""
         if serial_number:
             self.send_line(f"FAIL,{serial_number}")
         else:
@@ -96,7 +92,7 @@ class RemoteTcpClient(QObject):
 
     @Slot()
     def _on_connected(self):
-        """Khi kết nối thành công"""
+        """Khi kết nố """
         self._is_connected = True
         self._reconnect_timer.stop()
         logger.info(f"Connected to TCP server at {self._target_host}:{self._target_port}")

@@ -10,3 +10,4 @@ screenccd/
 *.whl
 *.exe
 *.dist
+python_demo/

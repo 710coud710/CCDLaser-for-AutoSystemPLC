@@ -1,5 +1,6 @@
 # Camera Configuration - MindVision Camera
 camera:
+  camera_type: "mvs"
   # Camera ID:
   #   - "cam0", "cam1", "cam2" → chọn camera theo index (0, 1, 2)
   #   - "auto" → chọn camera đầu tiên

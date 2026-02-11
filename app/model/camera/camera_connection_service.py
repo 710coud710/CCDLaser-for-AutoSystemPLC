@@ -1,6 +1,6 @@
 """
-Camera Connection Service - MindVision Camera Manager
-Quản lý kết nối và điều khiển MindVision camera
+Camera Connection Service - Multi-Camera Manager
+Quản lý kết nối và điều khiển camera (MindVision hoặc MVS)
 """
 import logging
 from typing import Optional, Dict, Any
@@ -8,15 +8,17 @@ import numpy as np
 import cv2
 from .camera_base import CameraBase
 from .mindvision_camera import MindVisionCamera
+from .mvs_camera import MVSCamera
 
 logger = logging.getLogger(__name__)
 
 
 class CameraConnectionService:
     """
-    Service quản lý MindVision camera connection
+    Service quản lý camera connection (hỗ trợ nhiều loại camera)
     - Tạo và quản lý camera instance
     - Unified interface cho Presenter
+    - Hỗ trợ: MindVision (mvsdk) và MVS (Hikvision)
     """
     
     def __init__(self):
@@ -25,22 +27,36 @@ class CameraConnectionService:
     
     def create_camera(self, camera_id: str, config: Dict[str, Any]) -> bool:
         """
-        Tạo MindVision camera instance
+        Tạo camera instance dựa trên camera_type trong config
         Args:
             camera_id: Camera ID ("cam0", "cam1", "cam2", hoặc SN)
             config: Camera configuration từ YAML
+                - camera_type: "mindvision" hoặc "mvs" (default: "mindvision")
         Returns:
             True nếu tạo thành công
         """
         try:
-            logger.info(f"Creating MindVision camera: id={camera_id}")
+            # Get camera type from config (default: mindvision)
+            camera_type = config.get('camera_type', 'mindvision').lower()
+            
+            logger.info(f"Creating {camera_type} camera: id={camera_id}")
             
             # Cleanup existing camera nếu có
             if self._camera is not None:
                 self.cleanup()
             
-            # Tạo MindVision camera instance
-            self._camera = MindVisionCamera(camera_id, config)
+            # Create camera instance based on type
+            if camera_type == 'mvs':
+                self._camera = MVSCamera(camera_id, config)
+                logger.info("MVS camera instance created (Hikvision SDK)")
+            elif camera_type == 'mindvision':
+                self._camera = MindVisionCamera(camera_id, config)
+                logger.info("MindVision camera instance created (mvsdk)")
+            else:
+                logger.error(f"Unknown camera type: {camera_type}")
+                logger.error("Supported types: 'mindvision', 'mvs'")
+                return False
+            
             logger.info(f"Camera instance created: {self._camera.__class__.__name__}")
             return True
             
